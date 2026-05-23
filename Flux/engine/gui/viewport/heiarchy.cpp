@@ -143,14 +143,16 @@ void Heiarchy::AddCamera(const std::string& name) {
     }
     if (!hasMain) n.isMainCamera = true;
 
+    /*std::string modelPath = PathHelper::GetAssetPath("assets/models/camera.obj");
+    if (std::filesystem::exists(modelPath))
+        n.model = GetOrLoadModel(modelPath);
+*/
     std::string iconPath = PathHelper::GetAssetPath("assets/icons/camera.png");
-    if (std::filesystem::exists(iconPath)) n.textureID = TextureLoader::Load(iconPath);
-
-    std::string modelPath = PathHelper::GetAssetPath("assets/models/camera.obj");
-    if (std::filesystem::exists(modelPath)) n.model = GetOrLoadModel(modelPath);
+    if (std::filesystem::exists(iconPath))
+        n.textureID = TextureLoader::Load(iconPath);
 
     nodes.push_back(n);
-    selectedIndex = (int)nodes.size() -1;
+    selectedIndex = (int)nodes.size() - 1;
 }
 
 void Heiarchy::DrawNode(int index) {

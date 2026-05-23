@@ -1,4 +1,5 @@
 #include "viewport.h"
+
 #include "../../utils/pathHelper.h"
 #include "3DRenderer.h"
 #include "Model.h"
@@ -31,12 +32,22 @@ void Viewport::Init()
     renderer->InitShadowMap(4096);
 }
 
-bool Viewport::CheckSphereHit(glm::vec3 ro, glm::vec3 rd, glm::vec3 center, float radius)
+float Viewport::CheckSphereHit(glm::vec3 ro, glm::vec3 rd, glm::vec3 center, float radius)
 {
     glm::vec3 oc = ro - center;
     float b = glm::dot(oc, rd);
     float c = glm::dot(oc, oc) - radius * radius;
-    return (b * b - c) > 0.0f;
+    float disc = b * b - c;
+    if (disc < 0.0f)
+        return -1.0f;
+    float sqrtDisc = std::sqrt(disc);
+    float t0 = -b - sqrtDisc;
+    if (t0 > 0.0f)
+        return t0;
+    float t1 = -b + sqrtDisc;
+    if (t1 > 0.0f)
+        return t1;
+    return -1.0f;
 }
 
 glm::vec3 Viewport::RaycastToGroundPlane(ImVec2 mousePos, ImVec2 imagePos, ImVec2 sz, glm::mat4 proj, glm::mat4 view)
@@ -68,22 +79,24 @@ void Viewport::HandleObjectSelection(ImVec2 mousePos, ImVec2 sz, glm::mat4 proj,
     glm::vec3 ro = camera->Position;
 
     int best = -1;
-    float bestDist = 999999.f;
+
+    float bestT = std::numeric_limits<float>::max();
+
     for (int i = 0; i < (int)heiarchy.nodes.size(); i++)
     {
         if (heiarchy.nodes[i].isLightingNode || heiarchy.nodes[i].isLocked)
             continue;
-        float r = glm::length(heiarchy.nodes[i].scale) * 0.75f;
-        if (r < 0.3f)
-            r = 0.3f;
-        if (CheckSphereHit(ro, rayWorld, heiarchy.nodes[i].position, r))
+
+        glm::vec3 s = heiarchy.nodes[i].scale;
+        float r = std::max({std::abs(s.x), std::abs(s.y), std::abs(s.z)}) * 0.6f;
+        if (r < 0.5f)
+            r = 0.5f;
+
+        float t = CheckSphereHit(ro, rayWorld, heiarchy.nodes[i].position, r);
+        if (t >= 0.0f && t < bestT)
         {
-            float d = glm::distance(ro, heiarchy.nodes[i].position);
-            if (d < bestDist)
-            {
-                bestDist = d;
-                best = i;
-            }
+            bestT = t;
+            best = i;
         }
     }
 
@@ -111,9 +124,13 @@ void Viewport::DrawLightGizmos(Heiarchy &heiarchy, glm::mat4 view, glm::mat4 pro
             continue;
         if (node.isLightingNode)
             continue;
+        if (node.textureID == 0 && node.type == NodeType::Camera)
+        {
+            std::string iconPath = PathHelper::GetAssetPath("assets/icons/camera.png");
+            node.textureID = TextureLoader::Load(iconPath);
+        }
 
         bool selected = (heiarchy.selectedIndex == i);
-        renderer->DrawBillboard(node.textureID, node.position, 0.5f, view, proj);
         ImVec2 sp = WorldToScreen(node.position, view, proj, imagePos, sz);
         if (sp.x < imagePos.x || sp.x > imagePos.x + sz.x)
             continue;
@@ -156,23 +173,9 @@ void Viewport::RenderViewport(Heiarchy &heiarchy)
     ImGuizmo::BeginFrame();
     ImGuiIO &io = ImGui::GetIO();
 
-    if (showSettings)
-    {
-        if (ImGui::Begin("Viewport Settings", &showSettings))
-        {
-            if (ImGui::Checkbox("VSync", &vsyncEnabled))
-                glfwSwapInterval(vsyncEnabled ? 1 : 0);
-            ImGui::Separator();
-            ImGui::Text("Camera");
-            ImGui::SliderFloat("Sensitivity", &camera->MouseSensitivity, 0.01f, 0.5f);
-            ImGui::SliderFloat("Move Speed", &camera->MovementSpeed, 1.0f, 50.0f);
-        }
-        ImGui::End();
-    }
-
     ImGui::Begin("Viewport", nullptr, ImGuiWindowFlags_NoScrollbar);
-    if (ImGui::IsWindowHovered())
-        ImGui::SetWindowFocus();
+    /*if (ImGui::IsWindowHovered())
+        ImGui::SetWindowFocus();*/
 
     ImGui::Text("FPS: %.1f", io.Framerate);
 
@@ -222,7 +225,7 @@ void Viewport::RenderViewport(Heiarchy &heiarchy)
         camera->ProcessMouseMovement(io.MouseDelta.x, -io.MouseDelta.y);
     }
 
-    if ((flyActive || (winFocused && rmbDown)) && winFocused)
+    if (flyActive && winFocused)
     {
         float spd = ImGui::IsKeyDown(ImGuiKey_LeftShift) ? 3.0f : 1.0f;
         if (ImGui::IsKeyDown(ImGuiKey_W))
@@ -245,7 +248,7 @@ void Viewport::RenderViewport(Heiarchy &heiarchy)
         camera->ProcessKeyboard(FORWARD, dolly);
     }
 
-    if (winFocused && ImGui::IsKeyPressed(ImGuiKey_Delete))
+    if (winFocused && !ImGui::GetIO().WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Delete))
     {
         int sel = heiarchy.selectedIndex;
         if (sel >= 0 && sel < (int)heiarchy.nodes.size() && !heiarchy.nodes[sel].isLightingNode)
@@ -257,8 +260,6 @@ void Viewport::RenderViewport(Heiarchy &heiarchy)
 
     glm::mat4 view = camera->GetViewMatrix();
     glm::mat4 proj = glm::perspective(glm::radians(70.0f), aspect, 0.1f, 2000.f);
-
-    ImVec2 imagePos = ImGui::GetCursorScreenPos();
 
     glm::vec3 sunDir = glm::vec3(0.f, -1.f, 0.f);
     float timeOfDay = 14.f;
@@ -319,12 +320,43 @@ void Viewport::RenderViewport(Heiarchy &heiarchy)
     if (showGrid)
         renderer->DrawGrid(view, proj, camera->Position);
 
+    for (auto &node : heiarchy.nodes)
+    {
+        if (node.type != NodeType::Camera)
+            continue;
+
+        if (node.textureID == 0)
+        {
+            std::string p = PathHelper::GetAssetPath("assets/icons/camera.png");
+            if (std::filesystem::exists(p))
+                node.textureID = TextureLoader::Load(p);
+        }
+
+        if (node.model)
+        {
+            glm::mat4 camMat = node.GetTransformMatrix();
+            camMat = glm::scale(camMat, glm::vec3(0.25f));
+            renderer->DrawScene(*node.model, 0, camMat, view, proj, camera->Position, heiarchy.nodes);
+        }
+        else if (node.textureID != 0)
+        {
+            renderer->DrawBillboard(node.textureID, node.position, 0.5f, view, proj);
+        }
+
+        if (node.type == NodeType::Camera)
+        {
+            glm::mat4 modelMat = node.GetTransformMatrix();
+
+            CameraGizmoRenderer::Draw(modelMat, view, proj, IM_COL32(0, 220, 255, 255));
+        }
+    }
+
     glManager->Unbind();
+
+    ImVec2 imagePos = ImGui::GetCursorScreenPos();
 
     ImGui::Image(reinterpret_cast<void *>(static_cast<intptr_t>(glManager->GetTexture())), sz, ImVec2(0, 1),
                  ImVec2(1, 0));
-
-    ImGui::Checkbox("Show Grid", &showGrid);
 
     ImVec2 mousePos = io.MousePos;
     ImVec2 mouseInCanvas(mousePos.x - imagePos.x, mousePos.y - imagePos.y);
@@ -333,6 +365,10 @@ void Viewport::RenderViewport(Heiarchy &heiarchy)
 
     if (!ribbonPtr->editorLocked)
     {
+        ImGuizmo::SetOrthographic(false);
+        ImGuizmo::SetDrawlist();
+        ImGuizmo::SetRect(imagePos.x, imagePos.y, sz.x, sz.y);
+        ImGuizmo::Enable(true);
 
         if (itemHovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !ImGuizmo::IsOver() && !isDraggingModel)
         {
@@ -409,11 +445,6 @@ void Viewport::RenderViewport(Heiarchy &heiarchy)
         }
 
         DrawLightGizmos(heiarchy, view, proj, imagePos, sz);
-
-        ImGuizmo::SetOrthographic(false);
-        ImGuizmo::SetDrawlist();
-        ImGuizmo::SetRect(imagePos.x, imagePos.y, sz.x, sz.y);
-        ImGuizmo::Enable(winFocused || winHovered);
 
         int sel = heiarchy.selectedIndex;
         if (sel >= 0 && sel < (int)heiarchy.nodes.size() && !heiarchy.nodes[sel].isLightingNode)
@@ -498,6 +529,8 @@ void Viewport::RenderViewport(Heiarchy &heiarchy)
             ImGui::EndPopup();
         }
     }
+
+    ImGui::Checkbox("Show Grid", &showGrid);
 
     ImGui::End();
 }

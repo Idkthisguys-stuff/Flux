@@ -386,6 +386,17 @@ namespace Flux
 						ImGui::SetWindowFocus("Text Editor");
 					}
 				}
+
+				if (file.path.extension() == ".fscn") {
+					if (ribbonPtr && ribbonPtr->heiarchyPtr) {
+						SceneSerializer::Load(
+							*ribbonPtr->heiarchyPtr,
+							file.path,
+							projectRoot.path
+						);
+						Output::addLog("Opened scene: " + file.path.filename().string());
+					}
+				}
 			}
 
 			if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID)) {

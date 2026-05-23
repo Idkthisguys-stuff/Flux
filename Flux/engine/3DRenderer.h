@@ -38,7 +38,7 @@ namespace Flux {
                         float timeOfDay      = 14.0f,
                         bool  hasLightingNode = true);
 
-        bool isSelected;
+        bool isSelected = false;
 
     private:
         unsigned int shaderProgram    = 0;

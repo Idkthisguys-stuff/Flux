@@ -1,14 +1,16 @@
+#define NOMINMAX
 #pragma once
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <glad/glad.h>
-#include <GLFW/glfw3.h>
 #include <string>
 #include <memory>
 #include <filesystem>
 #include "imgui.h"
 #include "ImGuizmo.h"
+
+#include "utils/cameraGuizmoModel.h"
 
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/euler_angles.hpp>
@@ -51,7 +53,7 @@ namespace Flux {
         glm::vec3              ghostPos        = glm::vec3(0.f);
         bool                   isDraggingModel = false;
 
-        bool CheckSphereHit(glm::vec3 ro, glm::vec3 rd, glm::vec3 center, float radius);
+        float CheckSphereHit(glm::vec3 ro, glm::vec3 rd, glm::vec3 center, float radius);
         void HandleObjectSelection(ImVec2 mousePos, ImVec2 sz,
                                    glm::mat4 proj, glm::mat4 view,
                                    Heiarchy& heiarchy);

@@ -11,8 +11,6 @@ uniform bool      hasTexture;
 uniform bool      isSelected;
 uniform sampler2D albedoMap;
 uniform vec3      matColor;
-uniform vec3      nodeBaseColor;
-uniform bool      useNodeColor;
 uniform float     roughness;
 uniform float     metallic;
 uniform float     alpha;
@@ -132,11 +130,12 @@ vec3 PBRContrib(vec3 N, vec3 V, vec3 L, vec3 lightColor,
 }
 
 void main() {
-    vec3 baseCol = useNodeColor ? nodeBaseColor
-                                : (hasTexture ? vec3(1.0) : matColor);
-    vec3 albedo  = hasTexture
-                   ? pow(texture(albedoMap, TexCoords).rgb, vec3(2.2)) * baseCol
-                   : pow(baseCol, vec3(2.2));
+    vec3 albedo;
+    if (hasTexture) {
+        albedo = pow(texture(albedoMap, TexCoords).rgb, vec3(2.2));
+    } else {
+        albedo = pow(max(matColor, vec3(0.001)), vec3(2.2));
+    }
 
     vec3 N  = normalize(Normal);
     vec3 V  = normalize(viewPos - FragPos);

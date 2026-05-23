@@ -157,12 +157,21 @@ namespace Flux {
         if (m_updateFuncs.empty()) return;
 
         for (auto& updateFunc : m_updateFuncs) {
-        auto result = updateFunc();
-        if (!result.valid()) {
-            sol::error err = result;
-            Output::addLog("LUA RUNTIME ERROR: " + std::string(err.what()));
+            auto result = updateFunc();
+            if (!result.valid()) {
+                sol::error err = result;
+                sol::call_status status = result.status();
+                
+                if (status == sol::call_status::runtime) {
+                    Output::addLog("[USER SCRIPT ERROR] " + std::string(err.what()));
+                } else {
+                    Output::addLog("[ENGINE BINDING ERROR] C++ failed to execute: " + std::string(err.what()));
+                }
+                
+                isRunning = false;
+                stop(); 
+            }
         }
-    }
     }
 
     void LuaEngine::stop() {

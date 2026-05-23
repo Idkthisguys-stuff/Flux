@@ -9,6 +9,11 @@
 #include <string>
 #include "../lib/portable-file-dialogs.h"
 
+#include "mechanics/SceneSerializer.h"
+
+#include "ribbon.h"
+#include "heiarchy.h"
+
 class TextEditor;
 
 namespace Flux {
@@ -30,6 +35,9 @@ namespace Flux {
 	};
 
 	class Viewport;
+	class SceneSerializer;
+
+	class Ribbon;
 
 	class Explorer {
 	public:
@@ -47,6 +55,10 @@ namespace Flux {
 		void scanForBackups();
 
 		::TextEditor* textEditor = nullptr;
+
+		Heiarchy h;
+
+		Ribbon* ribbonPtr = nullptr;
 
 		std::filesystem::path activeFilePath;
 		std::string activeScriptName;
