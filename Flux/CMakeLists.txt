@@ -1,80 +1,122 @@
-﻿cmake_minimum_required(VERSION 3.20)
+﻿cmake_minimum_required(VERSION 3.10)
+
+if (WIN32)
+    if (DEFINED ENV{VCPKG_ROOT} AND NOT DEFINED CMAKE_TOOLCHAIN_FILE)
+        set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" CACHE STRING "")
+    endif ()
+    set(VCPKG_TARGET_TRIPLET "x64-windows" CACHE STRING "")
+endif ()
+
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    set(VCPKG_TARGET_TRIPLET "x64-windows-llvm" CACHE STRING "")
+endif()
 project(FluxEngine LANGUAGES C CXX)
+
+set(RESOURCES "")
+if (WIN32)
+    set(RESOURCES "resource.rc")
+endif()
 
 add_executable(Flux
         "main.cpp"
-        "engine/Window.cpp"
-        "engine/Window.h"
-        "engine/gui/viewport/viewport.cpp"
-        "engine/gui/viewport/viewport.h"
-        "engine/gui/viewport/ribbon.cpp"
-        "engine/gui/viewport/explorer.cpp"
-        "engine/gui/viewport/explorer.h"
-        "engine/gui/viewport/output.cpp"
-        "engine/gui/viewport/properties.h"
-        "engine/gui/viewport/properties.cpp"
-        "engine/Model.h"
-        "engine/3DRenderer.h"
-        "engine/OpenGLManager.cpp"
-        "engine/3DRenderer.cpp"
-        "engine/Model.cpp"
-        "engine/mechanics/camera.h"
-        engine/gui/viewport/heiarchy.cpp
-        engine/gui/viewport/heiarchy.h
-        engine/mechanics/Scenenode.h
-        engine/Textureloader.cpp
-        engine/Textureloader.h
-        engine/stb_implementation.cpp
-        "${CMAKE_CURRENT_SOURCE_DIR}/lib/glad.c"
+        "core/Window.cpp"
+        "core/Window.h"
+        "editor/viewport.cpp"
+        "editor/viewport.h"
+        "editor/ribbon.cpp"
+        "editor/explorer.cpp"
+        "editor/explorer.h"
+        "editor/output.cpp"
+        "editor/properties.h"
+        "editor/properties.cpp"
+        "render/3D/OpenGL/Model.h"
+        "render/3D/OpenGL/OpenGLRenderer.h"
+        "render/3D/OpenGL/OpenGLManager.cpp"
+        "render/3D/OpenGL/OpenGLRenderer.cpp"
+        "render/3D/OpenGL/Model.cpp"
+        "logic/data/camera.h"
+        editor/heiarchy.cpp
+        editor/heiarchy.h
+        logic/data/Scenenode.h
+        logic/Textureloader.cpp
+        logic/Textureloader.h
+        stb_implementation.cpp
+        core/pathHelper.h
+        core/pathHelper.cpp
+        editor/texteditor.h
+        editor/texteditor.cpp
+        scripting/luaEngine.h
+        scripting/luaEngine.cpp
+        logic/runtime.h
+        logic/runtime.cpp
+        logic/SplashScreen.h
+        logic/data/cameraGuizmoModel.h
+        logic/PhysicsLayer.h
+        resource.rc
 )
+
+get_filename_component(PROJECT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/.." ABSOLUTE)
 
 if (NOT WIN32)
     target_sources(Flux PRIVATE
             "${CMAKE_CURRENT_SOURCE_DIR}/lib/imgui/imgui.cpp"
+            "${CMAKE_CURRENT_SOURCE_DIR}/lib/imgui/imgui_demo.cpp"
             "${CMAKE_CURRENT_SOURCE_DIR}/lib/imgui/imgui_draw.cpp"
             "${CMAKE_CURRENT_SOURCE_DIR}/lib/imgui/imgui_widgets.cpp"
             "${CMAKE_CURRENT_SOURCE_DIR}/lib/imgui/imgui_tables.cpp"
-            "${CMAKE_CURRENT_SOURCE_DIR}/lib/imgui/backends/imgui_impl_glfw.cpp"
+            "${CMAKE_CURRENT_SOURCE_DIR}/lib/imgui/backends/imgui_impl_sdl3.cpp"
             "${CMAKE_CURRENT_SOURCE_DIR}/lib/imgui/backends/imgui_impl_opengl3.cpp"
             "${CMAKE_CURRENT_SOURCE_DIR}/lib/imguizmo/ImGuizmo.cpp"
             "${CMAKE_CURRENT_SOURCE_DIR}/lib/glad/include"
             "${CMAKE_CURRENT_SOURCE_DIR}/lib/stb"
+            "${CMAKE_CURRENT_SOURCE_DIR}/lib/glad/src/glad.c"
     )
 endif ()
 
 if (WIN32)
-    set_target_properties(Flux PROPERTIES
-            LINK_FLAGS "/SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup"
+    target_link_options(Flux PRIVATE 
+        "$<$<CONFIG:Debug>:/SUBSYSTEM:CONSOLE>"
+        "$<$<CONFIG:Release>:/SUBSYSTEM:WINDOWS>"
+        "/ENTRY:mainCRTStartup"
     )
-endif ()
+endif()
 
 find_package(OpenGL REQUIRED)
-find_package(glm REQUIRED)
+find_package(glm CONFIG REQUIRED)
 find_package(assimp REQUIRED)
+find_package(sol2 CONFIG REQUIRED)
+find_package(SDL3 CONFIG REQUIRED)
+
+find_package(Jolt CONFIG REQUIRED)
 
 if (WIN32)
-    find_package(glfw3 CONFIG REQUIRED)
     find_package(imgui CONFIG REQUIRED)
     find_package(glad CONFIG REQUIRED)
     find_package(imguizmo CONFIG REQUIRED)
+    find_package(Stb REQUIRED)
 else ()
-    find_package(glfw3 REQUIRED)
 endif ()
 
-file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/assets" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
-file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/assets/models" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
-file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/assets/icons" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+file(COPY "${PROJECT_ROOT}/assets" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
+file(COPY "${PROJECT_ROOT}/assets/models" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
+file(COPY "${PROJECT_ROOT}/assets/splash" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
+file(COPY "${PROJECT_ROOT}/assets/fonts" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
+file(COPY "${PROJECT_ROOT}/assets/icons" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
 file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/templates" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
 file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/templates/Project_Templates" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
 file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/templates/File_Templates" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
 file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/templates/File_Templates/scripts" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
 file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/templates/File_Templates/models" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
-file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/engine" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
-file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/engine/gui" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
-file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/engine/gui/viewport" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
-file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/engine/mechanics" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
+file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/core" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
+file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/editor" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
+file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/logic" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
+file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/render" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
+file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/scripting" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
 file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/shaders" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
 file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/lib" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
+file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/lib/luajit/src" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
 
 if (CMAKE_VERSION VERSION_GREATER 3.12)
     set_property(TARGET Flux PROPERTY CXX_STANDARD 20)
@@ -88,22 +130,28 @@ set(CMAKE_AUTOUIC ON)
 target_link_libraries(Flux PRIVATE
         glm::glm
         assimp::assimp
+        sol2::sol2
+        SDL3::SDL3
+        Jolt::Jolt
         ${OPENGL_LIBRARIES}
 )
 
 if (WIN32)
     target_link_libraries(Flux PRIVATE
-            glfw
             imgui::imgui
             glad::glad
             imguizmo::imguizmo
             opengl32
             dwmapi
+            "${CMAKE_CURRENT_SOURCE_DIR}/lib/luajit/src/lua51.lib"
     )
-    set_target_properties(Flux PROPERTIES LINK_FLAGS "/SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup")
+    target_link_options(Flux PRIVATE 
+        "$<$<CONFIG:Debug>:/SUBSYSTEM:CONSOLE>"
+        "$<$<CONFIG:Release>:/SUBSYSTEM:WINDOWS>"
+        "/ENTRY:mainCRTStartup"
+    )
 else ()
     target_link_libraries(Flux PRIVATE
-            glfw
             dl
             pthread
     )
@@ -111,15 +159,24 @@ endif ()
 
 target_include_directories(Flux PRIVATE
         "engine"
-        "engine/gui/viewport"
+        "engine"
         "assets"
-        "${CMAKE_CURRENT_SOURCE_DIR}/lib/imgui"
-        "${CMAKE_CURRENT_SOURCE_DIR}/lib/imgui/backends"
-        "${CMAKE_CURRENT_SOURCE_DIR}/lib/glad/include"
-        "${CMAKE_CURRENT_SOURCE_DIR}/lib/imguizmo"
-        "${CMAKE_CURRENT_SOURCE_DIR}/lib/stb"
         ${CMAKE_CURRENT_SOURCE_DIR}
+        "${CMAKE_CURRENT_SOURCE_DIR}/lib/luajit/src"
+        "lib/luajit/src"
 )
+
+if (NOT WIN32)
+    target_include_directories(Flux PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/lib/imgui"
+            "${CMAKE_CURRENT_SOURCE_DIR}/lib/imgui/backends"
+            "${CMAKE_CURRENT_SOURCE_DIR}/lib/glad/include"
+            "${CMAKE_CURRENT_SOURCE_DIR}/lib/imguizmo"
+            "${CMAKE_CURRENT_SOURCE_DIR}/lib/stb"
+    )
+endif ()
+
+
 
 if (MSVC)
     target_compile_options(Flux PRIVATE $<$<CONFIG:Release>:/O2 /GL>)
@@ -141,6 +198,14 @@ if (NOT WIN32)
 
     add_custom_target(AppImage
             COMMAND ${CMAKE_COMMAND} -E rm -rf "AppDir"
+
+            COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/assets/flux.png" "${ICON_RGBA}"
+
+            COMMAND ${CMAKE_COMMAND} -E make_directory "AppDir/usr/share/flux/shaders"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "AppDir/usr/share/flux/assets"
+
+            COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/shaders" "AppDir/usr/share/flux/shaders"
+            COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/assets" "AppDir/usr/share/flux/assets"
 
             COMMAND convert "${ICON_SRC}" -depth 8 RGBA:"${ICON_RGBA}_raw.rgba" || true
             COMMAND convert "${ICON_SRC}" -type TrueColorAlpha "${ICON_RGBA}"

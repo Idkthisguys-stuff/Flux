@@ -8,7 +8,7 @@ int main() // This is where the game starts!  (OnStart)
 
     while (true) // This is where the game updates!  (OnUpdate)
     {
-        // Put logic here!
+        // Put looping logic here!
     }
 
     return 0;
