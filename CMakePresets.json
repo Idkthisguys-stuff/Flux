@@ -8,12 +8,7 @@
         "binaryDir": "${sourceDir}/out/build/${presetName}",
         "installDir": "${sourceDir}/out/install/${presetName}",
         "cacheVariables": {
-          "CMAKE_C_COMPILER": "cl.exe",
-          "CMAKE_CXX_COMPILER": "cl.exe",
-          "CMAKE_TOOLCHAIN_FILE": {
-            "value": "C:/Program Files/Microsoft Visual Studio/2022/Community/VC/vcpkg/scripts/buildsystems/vcpkg.cmake",
-            "type": "FILEPATH"
-          }
+          "CMAKE_TOOLCHAIN_FILE": "C:/Users/idkf0/Documents/VCPKG/vcpkg/scripts/buildsystems/vcpkg.cmake"
         },
         "condition": {
           "type": "equals",
@@ -21,52 +16,30 @@
           "rhs": "Windows"
         }
       },
-        {
-            "name": "x64-debug",
-            "displayName": "x64 Debug",
-            "inherits": "windows-base",
-            "architecture": {
-                "value": "x64",
-                "strategy": "external"
-            },
-            "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Debug",
-                "CMAKE_TOOLCHAIN_FILE": "C:/Users/idkf0/Documents/VCPKG/vcpkg/scripts/buildsystems/vcpkg.cmake"
-            }
-        },
-        {
-            "name": "x64-release",
-            "displayName": "x64 Release",
-            "inherits": "x64-debug",
-            "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Release"
-            }
-        },
-        {
-            "name": "x86-debug",
-            "displayName": "x86 Debug",
-            "inherits": "windows-base",
-            "architecture": {
-                "value": "x86",
-                "strategy": "external"
-            },
-            "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Debug"
-            }
-        },
       {
-        "name": "x86-release",
-        "displayName": "x86 Release",
-        "inherits": "x86-debug",
+        "name": "x64-debug",
+        "displayName": "x64 Debug (MSVC)",
+        "inherits": "windows-base",
+        "architecture": {
+            "value": "x64",
+            "strategy": "external"
+        },
         "cacheVariables": {
-          "CMAKE_BUILD_TYPE": "Release"
+            "CMAKE_BUILD_TYPE": "Debug",
+            "CMAKE_C_COMPILER": "cl.exe",
+            "CMAKE_CXX_COMPILER": "cl.exe"
         }
       },
       {
         "name": "x64-release-clang",
         "displayName": "x64 Release (Clang)",
-        "inherits": "x64-release",
+        "inherits": "windows-base",
+        "architecture": {
+            "value": "x64",
+            "strategy": "external"
+        },
         "cacheVariables": {
+          "CMAKE_BUILD_TYPE": "Release",
           "CMAKE_C_COMPILER": "clang-cl.exe",
           "CMAKE_CXX_COMPILER": "clang-cl.exe",
           "VCPKG_TARGET_TRIPLET": "x64-windows"

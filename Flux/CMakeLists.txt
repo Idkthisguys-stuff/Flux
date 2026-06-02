@@ -1,4 +1,12 @@
 ﻿cmake_minimum_required(VERSION 3.10)
+
+if (WIN32)
+    if (DEFINED ENV{VCPKG_ROOT} AND NOT DEFINED CMAKE_TOOLCHAIN_FILE)
+        set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" CACHE STRING "")
+    endif ()
+    set(VCPKG_TARGET_TRIPLET "x64-windows" CACHE STRING "")
+endif ()
+
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     set(VCPKG_TARGET_TRIPLET "x64-windows-llvm" CACHE STRING "")
 endif()
@@ -11,41 +19,43 @@ endif()
 
 add_executable(Flux
         "main.cpp"
-        "engine/Window.cpp"
-        "engine/Window.h"
-        "engine/gui/viewport/viewport.cpp"
-        "engine/gui/viewport/viewport.h"
-        "engine/gui/viewport/ribbon.cpp"
-        "engine/gui/viewport/explorer.cpp"
-        "engine/gui/viewport/explorer.h"
-        "engine/gui/viewport/output.cpp"
-        "engine/gui/viewport/properties.h"
-        "engine/gui/viewport/properties.cpp"
-        "engine/Model.h"
-        "engine/3DRenderer.h"
-        "engine/OpenGLManager.cpp"
-        "engine/3DRenderer.cpp"
-        "engine/Model.cpp"
-        "engine/mechanics/camera.h"
-        engine/gui/viewport/heiarchy.cpp
-        engine/gui/viewport/heiarchy.h
-        engine/mechanics/Scenenode.h
-        engine/Textureloader.cpp
-        engine/Textureloader.h
-        engine/stb_implementation.cpp
-        engine/utils/pathHelper.h
-        engine/utils/pathHelper.cpp
-        engine/utils/pathHelper.cpp
-        engine/gui/texteditor.h
-        engine/gui/texteditor.cpp
-        engine/luaEngine.h
-        engine/luaEngine.cpp
-        engine/runtime.h
-        engine/runtime.cpp
-        engine/mechanics/SplashScreen.h
-        engine/utils/cameraGuizmoModel.h
-        engine/physics/gravity/gravity.h
+        "core/Window.cpp"
+        "core/Window.h"
+        "editor/viewport.cpp"
+        "editor/viewport.h"
+        "editor/ribbon.cpp"
+        "editor/explorer.cpp"
+        "editor/explorer.h"
+        "editor/output.cpp"
+        "editor/properties.h"
+        "editor/properties.cpp"
+        "render/3D/OpenGL/Model.h"
+        "render/3D/OpenGL/OpenGLRenderer.h"
+        "render/3D/OpenGL/OpenGLManager.cpp"
+        "render/3D/OpenGL/OpenGLRenderer.cpp"
+        "render/3D/OpenGL/Model.cpp"
+        "logic/data/camera.h"
+        editor/heiarchy.cpp
+        editor/heiarchy.h
+        logic/data/Scenenode.h
+        logic/Textureloader.cpp
+        logic/Textureloader.h
+        stb_implementation.cpp
+        core/pathHelper.h
+        core/pathHelper.cpp
+        editor/texteditor.h
+        editor/texteditor.cpp
+        scripting/luaEngine.h
+        scripting/luaEngine.cpp
+        logic/runtime.h
+        logic/runtime.cpp
+        logic/SplashScreen.h
+        logic/data/cameraGuizmoModel.h
+        logic/PhysicsLayer.h
+        resource.rc
 )
+
+get_filename_component(PROJECT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/.." ABSOLUTE)
 
 if (NOT WIN32)
     target_sources(Flux PRIVATE
@@ -77,6 +87,8 @@ find_package(assimp REQUIRED)
 find_package(sol2 CONFIG REQUIRED)
 find_package(SDL3 CONFIG REQUIRED)
 
+find_package(Jolt CONFIG REQUIRED)
+
 if (WIN32)
     find_package(imgui CONFIG REQUIRED)
     find_package(glad CONFIG REQUIRED)
@@ -87,20 +99,21 @@ endif ()
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/assets" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
-file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/assets/models" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
-file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/assets/splash" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
-file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
-file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/assets/icons" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
+file(COPY "${PROJECT_ROOT}/assets" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
+file(COPY "${PROJECT_ROOT}/assets/models" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
+file(COPY "${PROJECT_ROOT}/assets/splash" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
+file(COPY "${PROJECT_ROOT}/assets/fonts" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
+file(COPY "${PROJECT_ROOT}/assets/icons" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
 file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/templates" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
 file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/templates/Project_Templates" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
 file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/templates/File_Templates" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
 file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/templates/File_Templates/scripts" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
 file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/templates/File_Templates/models" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
-file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/engine" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
-file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/engine/gui" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
-file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/engine/gui/viewport" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
-file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/engine/mechanics" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
+file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/core" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
+file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/editor" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
+file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/logic" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
+file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/render" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
+file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/scripting" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
 file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/shaders" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
 file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/lib" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
 file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/lib/luajit/src" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
@@ -119,6 +132,7 @@ target_link_libraries(Flux PRIVATE
         assimp::assimp
         sol2::sol2
         SDL3::SDL3
+        Jolt::Jolt
         ${OPENGL_LIBRARIES}
 )
 
@@ -145,7 +159,7 @@ endif ()
 
 target_include_directories(Flux PRIVATE
         "engine"
-        "engine/gui/viewport"
+        "engine"
         "assets"
         ${CMAKE_CURRENT_SOURCE_DIR}
         "${CMAKE_CURRENT_SOURCE_DIR}/lib/luajit/src"

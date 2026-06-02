@@ -1,17 +1,17 @@
 {
     "version": "0.2.0",
     "configurations": [
-        
         {
-            "name": "Launch Flux Engine (Auto-Build)",
+            "name": "Launch and Debug",
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${command:cmake.launchTargetPath}",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
-            "externalConsole": true, 
-            "preLaunchTask": "CMake: build"
+            "externalConsole": true,
+            "terminal": "external",
+            "preLaunchTask": "CMake: build" 
         }
     ]
 }
