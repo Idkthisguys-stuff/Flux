@@ -1,5 +1,6 @@
 #include "OpenGLRenderer.h"
 #include "core/pathHelper.h"
+#include <algorithm>
 #include <fstream>
 #include <glad/glad.h>
 #include <iostream>
@@ -105,9 +106,9 @@ void Renderer3D::InitShadowMap(int resolution)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-    float border[] = {1.f, 1.f, 1.f, 1.f};
+    float border[] = { 1.0f, 1.0f, 1.0f, 1.0f };
     glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, border);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_NONE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
 
     glBindFramebuffer(GL_FRAMEBUFFER, shadowFBO);
@@ -133,14 +134,18 @@ void main() {}
     shadowReady = true;
 }
 
-void Renderer3D::DrawDepthPass(const std::vector<SceneNode> &nodes, glm::vec3 lightDir)
+void Renderer3D::DrawDepthPass(const std::vector<SceneNode> &nodes, glm::vec3 lightDir, glm::vec3 cameraPos)
 {
     if (!shadowReady)
         return;
 
-    glm::vec3 lp = -glm::normalize(lightDir) * 40.f;
-    glm::mat4 lv = glm::lookAt(lp, glm::vec3(0.f), glm::vec3(0.f, 1.f, 0.f));
-    glm::mat4 lpr = glm::ortho(-30.f, 30.f, -30.f, 30.f, 0.5f, 120.f);
+    glm::vec3 anchor = glm::vec3(cameraPos.x, 0.0f, cameraPos.z);
+    float range = 120.f; // cover 240x240 world units around the camera
+
+    glm::vec3 ldir = glm::normalize(lightDir);
+    glm::vec3 lp   = anchor - ldir * range;
+    glm::mat4 lv   = glm::lookAt(lp, anchor, glm::vec3(0.f, 1.f, 0.f));
+    glm::mat4 lpr  = glm::ortho(-range, range, -range, range, 0.5f, range * 4.0f);
     lightSpaceMatrix = lpr * lv;
 
     glViewport(0, 0, shadowResolution, shadowResolution);
@@ -159,7 +164,7 @@ void Renderer3D::DrawDepthPass(const std::vector<SceneNode> &nodes, glm::vec3 li
     {
         if (node.type != NodeType::Mesh || !node.model)
             continue;
-        setMat4(depthProgram, "model", node.GetTransformMatrix());
+        setMat4(depthProgram, "model", node.GetWorldTransform(nodes));
         for (auto &mesh : node.model->meshes)
         {
             glBindVertexArray(mesh.VAO);
@@ -175,7 +180,8 @@ void Renderer3D::DrawDepthPass(const std::vector<SceneNode> &nodes, glm::vec3 li
 
 void Renderer3D::DrawScene(Model &model, unsigned int overrideTexID, glm::mat4 modelMatrix, glm::mat4 view,
                            glm::mat4 proj, glm::vec3 cameraPos, const std::vector<SceneNode> &lights, float alpha,
-                           float roughness, float metallic, float timeOfDay, glm::vec3 baseColor)
+                           float roughness, float metallic, float timeOfDay, glm::vec3 baseColor,
+                           glm::vec2 textureScale, bool pixelated)
 {
     glUseProgram(shaderProgram);
 
@@ -202,6 +208,7 @@ void Renderer3D::DrawScene(Model &model, unsigned int overrideTexID, glm::mat4 m
     set1f(shaderProgram, "metallic", metallic);
     set1f(shaderProgram, "timeOfDay", timeOfDay);
     set1i(shaderProgram, "isSelected", isSelected ? 1 : 0);
+    glUniform2f(glGetUniformLocation(shaderProgram, "textureScale"), textureScale.x, textureScale.y);
 
     glm::mat3 nm = glm::mat3(glm::transpose(glm::inverse(modelMatrix)));
     setMat3(shaderProgram, "normalMatrix", nm);
@@ -209,9 +216,9 @@ void Renderer3D::DrawScene(Model &model, unsigned int overrideTexID, glm::mat4 m
     if (shadowReady)
     {
         setMat4(shaderProgram, "lightSpaceMatrix", lightSpaceMatrix);
-        glActiveTexture(GL_TEXTURE1);
+        glActiveTexture(GL_TEXTURE7);
         glBindTexture(GL_TEXTURE_2D, shadowDepthTex);
-        set1i(shaderProgram, "shadowMap", 1);
+        set1i(shaderProgram, "shadowMap", 7);
         set1i(shaderProgram, "hasShadowMap", 1);
     }
     else
@@ -329,33 +336,123 @@ void Renderer3D::DrawScene(Model &model, unsigned int overrideTexID, glm::mat4 m
     set3f(shaderProgram, "surfaceColor", surfCol);
     set1f(shaderProgram, "surfaceIntensity", surfInt);
 
-    for (auto &mesh : model.meshes)
-    {
-        bool useTex = (overrideTexID != 0);
+    auto drawMesh = [&](const Mesh &mesh) {
+        unsigned int albedoToUse =
+            (overrideTexID != 0) ? overrideTexID : (mesh.material.albedoMap ? mesh.material.albedoMap : mesh.textureID);
+        bool useTex = (albedoToUse != 0);
         set1i(shaderProgram, "hasTexture", useTex ? 1 : 0);
+        set1i(shaderProgram, "hasAlpha", (useTex && mesh.hasAlpha) ? 1 : 0);
 
         if (useTex)
         {
             glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D, overrideTexID);
+            glBindTexture(GL_TEXTURE_2D, albedoToUse);
             set1i(shaderProgram, "albedoMap", 0);
+
+            if (pixelated)
+            {
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+            }
+            else
+            {
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            }
 
             set3f(shaderProgram, "matColor", glm::vec3(1.0f));
         }
         else
         {
-
             glm::vec3 col = (baseColor.r >= 0.f) ? baseColor : (mesh.hasMtlColor) ? mesh.matColor : glm::vec3(0.8f);
             set3f(shaderProgram, "matColor", col);
         }
 
+        bool hasNormal = (mesh.material.normalMap != 0);
+        set1i(shaderProgram, "hasNormalMap", hasNormal ? 1 : 0);
+        if (hasNormal)
+        {
+            glActiveTexture(GL_TEXTURE1);
+            glBindTexture(GL_TEXTURE_2D, mesh.material.normalMap);
+            set1i(shaderProgram, "normalMap", 1);
+        }
+
+        bool hasMetallic = (mesh.material.metallicMap != 0);
+        set1i(shaderProgram, "hasMetallicMap", hasMetallic ? 1 : 0);
+        if (hasMetallic)
+        {
+            glActiveTexture(GL_TEXTURE2);
+            glBindTexture(GL_TEXTURE_2D, mesh.material.metallicMap);
+            set1i(shaderProgram, "metallicMap", 2);
+        }
+
+        bool hasRoughness = (mesh.material.roughnessMap != 0);
+        set1i(shaderProgram, "hasRoughnessMap", hasRoughness ? 1 : 0);
+        if (hasRoughness)
+        {
+            glActiveTexture(GL_TEXTURE3);
+            glBindTexture(GL_TEXTURE_2D, mesh.material.roughnessMap);
+            set1i(shaderProgram, "roughnessMap", 3);
+        }
+
+        bool hasAO = (mesh.material.aoMap != 0);
+        set1i(shaderProgram, "hasAoMap", hasAO ? 1 : 0);
+        if (hasAO)
+        {
+            glActiveTexture(GL_TEXTURE4);
+            glBindTexture(GL_TEXTURE_2D, mesh.material.aoMap);
+            set1i(shaderProgram, "aoMap", 4);
+        }
+
+        if (mesh.twoSided)
+            glDisable(GL_CULL_FACE);
+        else
+            glEnable(GL_CULL_FACE);
+
         glBindVertexArray(mesh.VAO);
         glDrawElements(GL_TRIANGLES, mesh.indexCount, GL_UNSIGNED_INT, nullptr);
         glBindVertexArray(0);
-    }
+    };
 
     glDepthMask(GL_TRUE);
     glDisable(GL_BLEND);
+    for (auto &mesh : model.meshes)
+    {
+        if (mesh.hasAlpha)
+            continue;
+        drawMesh(mesh);
+    }
+
+    std::vector<const Mesh *> alphaMeshes;
+    for (auto &mesh : model.meshes)
+        if (mesh.hasAlpha)
+            alphaMeshes.push_back(&mesh);
+
+    if (!alphaMeshes.empty())
+    {
+        glm::vec3 origin = glm::vec3(modelMatrix[3]);
+        std::sort(alphaMeshes.begin(), alphaMeshes.end(), [&](const Mesh *a, const Mesh *b) {
+            auto centre = [&](const Mesh *m) -> float {
+                if (m->verticies.empty())
+                    return 0.f;
+                glm::vec4 wp = modelMatrix * glm::vec4(m->verticies[0].Position, 1.f);
+                glm::vec3 d = glm::vec3(wp) - cameraPos;
+                return glm::dot(d, d);
+            };
+            return centre(a) > centre(b);
+        });
+
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glDepthMask(GL_FALSE);
+        for (auto *mesh : alphaMeshes)
+            drawMesh(*mesh);
+        glDepthMask(GL_TRUE);
+        glDisable(GL_BLEND);
+    }
+
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
 }
 
 void Renderer3D::InitSkybox()

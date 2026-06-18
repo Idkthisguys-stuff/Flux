@@ -29,6 +29,7 @@ void main()
     vec3 B = normalize(normalMatrix * aBitangent);
     vec3 N = Normal;
     T = normalize(T - dot(T, N) * N);
+    B = cross(N, T);
     TBN = mat3(T, B, N);
 
     gl_Position = projection * view * worldPos;

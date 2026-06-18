@@ -20,6 +20,9 @@ namespace Flux {
         static unsigned int Load(const std::string& path);
         void Unload(const std::string& path);
         static unsigned int LoadCubemap(std::vector<std::string> faces);
+        static unsigned int LoadFromMemory(const std::string& cacheKey, const unsigned char* data, size_t size, bool* outHasAlpha = nullptr);
+
+        static unsigned int LoadFromMemoryRaw(const std::string& cacheKey, const unsigned char* data, int width, int height, GLenum srcFormat = GL_BGRA);
 
         static std::unordered_map<std::string, unsigned int> cache;
     private:

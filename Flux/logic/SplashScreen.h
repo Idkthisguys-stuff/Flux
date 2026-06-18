@@ -33,6 +33,7 @@ inline void RunSplashScreen(SDL_Window *window, const SplashConfig &cfg = {})
     GLuint textureID = 0;
     {
         int imgW, imgH, channels;
+        stbi_set_flip_vertically_on_load(false);
         unsigned char *data = stbi_load(PathHelper::GetAssetPath("assets/splash/iconSplash.png").c_str(), &imgW, &imgH, &channels, 4);
         if (data)
         {

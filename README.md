@@ -39,11 +39,22 @@ Flux gonna be cross platform on release (Except for macOS which is still in deve
 *A screenshot for the lighting in Flux (as of May 2. 2026)*
 ![Screenshot](cool/LightingSnapshotRestoring.png)
 
+*[Kost](https://github.com/Kost233)'s screenshot of Flux at June 4, 2026*
+![Screenshot](cool/Kost'sFirstScreenshot.png)
+
+*early `.fbx` import at full screen (June 7, 2026)*
+
+> #### [!] I DON'T OWN THESE MODELS AND TEXTURES
+
+
+![Screenshot](cool/Screenshot2026-06-07FBX_IMPORT.png)
+
 ## Top Contributors
 
-Small party, I know ;-; (literally just me)
+Small party, I know ;-;
 
 - [@Idkthisguy](https://github.com/Idkthisguy) - Creator and lead developer
+- [@Kost233](https://github.com/Kost233)
 
 ## Dependencies
 Flux was built with a lot of libraries. and without these libraries, I would've just gave up by now.
@@ -59,12 +70,14 @@ Thanks to these libraries that got me this far:
 - [ImGuizmo](https://github.com/cedricguillemet/imguizmo) - Manipulate objects directly in the viewport
 - [LinuxDeploy](https://github.com/linuxdeploy/linuxdeploy) - Used to make and distribute AppImages for Linux
 - [ImGuiColorTextEdit](https://github.com/BalazsJako/ImGuiColorTextEdit) - Credits to BalazsJako for making this, ImGuiColorTextEdit is now the foundation of the text editor and has solved one of the big problems making this project.
-- [LuaJIT](https://luajit.org/) - For running the Lua scripts
+- [LuaJIT](https://luajit.org/) - The engine for running the Lua scripts
 - [sol2](https://github.com/ThePhd/sol2) - For making the API and wraps for Lua
 - [nlohmann-json](https://github.com/nlohmann/json) - For JSON handling and persistent saving
 - [Jolt Physics](https://github.com/jrouwe/joltphysics) - For physics and collisions
 
 ## Credits
+### Inspired by [Godot](https://godotengine.org/) and [Unity](https://unity.com/) game engines
+
 ### [Favicon (for icons)](https://www.flaticon.com/)
 - [Point Light (Freepik)](https://www.flaticon.com/free-icon/idea_566410?term=lightbulb&page=1&position=4&origin=search&related_id=566410)
 - [Spotlight (Freepik)](https://www.flaticon.com/free-icon/spotlight_4014388?term=spotlight&page=1&position=7&origin=search&related_id=4014388)

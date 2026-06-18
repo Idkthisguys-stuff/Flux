@@ -366,4 +366,4 @@ CMakeLists.txt
 .idea/
 Flux/assets/fonts
 CppProperties.json
-.vscode/
+out/

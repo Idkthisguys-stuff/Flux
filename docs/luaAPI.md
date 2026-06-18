@@ -139,7 +139,40 @@ function onUpdate()
 end
 ```
 
-## Engine API
-The engine API lets you manipulate scene objects, manage game states and more that controls the engine just by using the `Engine.` prefix.
+## Data Types
 
-### **Vector3**
+### Vector3
+A data type that represents the 3D space of an object. This can be mostly used for positions, rotations, and scales/sizes.
+
+* **Constrcutor:**  `Vector3.new(x, y, z)` or `Vector3.new(value)` (This sets all the arguments into `value`)
+
+* **Arguments:** `x`, `y`, and `z` (numbers)
+
+Example:
+
+```lua
+local position = Vector3.new(0, 5, 10)
+local offset = Vector3.new(1, 0, 0)
+local newPosition = pos + offset
+print(newPosition.x, newPosition.y, newPosition.z)
+```
+
+### Color3
+Used to define RGB colors.
+* **Constructor:** `Color3.new(r, g, b)`
+* **Note:** Input values should be in the range of `0-255`. The engine automatically converts these to normalized 0.0-1.0 floats internally.
+
+```lua
+local red = Color3.new(255, 0, 0)
+local green = Color3.new(0, 255, 0)
+local blue = Color3.new(0, 0, 255)
+local white = Color3.new(255, 255, 255)
+```
+
+### Color4
+
+Used for defining RGBA colors (Red, Green, Blue, Alpha).
+
+* **Constructor:** `Color4.new(r, g, b, a)`
+
+* **Arguments:** `r`, `g`, `b,` and `a` (numbers).

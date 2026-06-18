@@ -1,10 +1,10 @@
 #include "viewport.h"
 
 #include "core/pathHelper.h"
-#include "render/3D/OpenGL/OpenGLRenderer.h"
+#include "heiarchy.h"
 #include "render/3D/OpenGL/Model.h"
 #include "render/3D/OpenGL/OpenGLManager.h"
-#include "heiarchy.h"
+#include "render/3D/OpenGL/OpenGLRenderer.h"
 #include <glm/gtx/string_cast.hpp>
 #include <iostream>
 
@@ -70,6 +70,23 @@ glm::vec3 Viewport::RaycastToGroundPlane(ImVec2 mousePos, ImVec2 imagePos, ImVec
 
 void Viewport::HandleObjectSelection(ImVec2 mousePos, ImVec2 sz, glm::mat4 proj, glm::mat4 view, Heiarchy &heiarchy)
 {
+    int best = GetNodeUnderMouse(mousePos, sz, proj, view, heiarchy);
+    bool ctrl = ImGui::GetIO().KeyCtrl;
+    bool shift = ImGui::GetIO().KeyShift;
+
+    if (best != -1)
+    {
+        heiarchy.selectNode(best, ctrl, shift);
+    }
+    else if (!ctrl && !shift)
+    {
+        heiarchy.selectedIndices.clear();
+        heiarchy.lastClickedIndex = -1;
+    }
+}
+
+int Viewport::GetNodeUnderMouse(ImVec2 mousePos, ImVec2 sz, glm::mat4 proj, glm::mat4 view, Heiarchy &heiarchy)
+{
     float ndcX = (2.f * mousePos.x) / sz.x - 1.f;
     float ndcY = 1.f - (2.f * mousePos.y) / sz.y;
     glm::vec4 rayClip(ndcX, ndcY, -1.f, 1.f);
@@ -79,7 +96,6 @@ void Viewport::HandleObjectSelection(ImVec2 mousePos, ImVec2 sz, glm::mat4 proj,
     glm::vec3 ro = camera->Position;
 
     int best = -1;
-
     float bestT = std::numeric_limits<float>::max();
 
     for (int i = 0; i < (int)heiarchy.nodes.size(); i++)
@@ -99,8 +115,7 @@ void Viewport::HandleObjectSelection(ImVec2 mousePos, ImVec2 sz, glm::mat4 proj,
             best = i;
         }
     }
-
-    heiarchy.selectedIndex = (best == heiarchy.selectedIndex) ? -1 : best;
+    return best;
 }
 
 static ImVec2 WorldToScreen(glm::vec3 worldPos, glm::mat4 view, glm::mat4 proj, ImVec2 imagePos, ImVec2 sz)
@@ -130,7 +145,7 @@ void Viewport::DrawLightGizmos(Heiarchy &heiarchy, glm::mat4 view, glm::mat4 pro
             node.textureID = TextureLoader::Load(iconPath);
         }
 
-        bool selected = (heiarchy.selectedIndex == i);
+        bool selected = heiarchy.isSelected(i);
         ImVec2 sp = WorldToScreen(node.position, view, proj, imagePos, sz);
         if (sp.x < imagePos.x || sp.x > imagePos.x + sz.x)
             continue;
@@ -250,11 +265,9 @@ void Viewport::RenderViewport(Heiarchy &heiarchy)
 
     if (winFocused && !ImGui::GetIO().WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Delete))
     {
-        int sel = heiarchy.selectedIndex;
-        if (sel >= 0 && sel < (int)heiarchy.nodes.size() && !heiarchy.nodes[sel].isLightingNode)
+        if (!heiarchy.selectedIndices.empty())
         {
-            heiarchy.nodes.erase(heiarchy.nodes.begin() + sel);
-            heiarchy.selectedIndex = std::min(sel, (int)heiarchy.nodes.size() - 1);
+            heiarchy.pendingDelete = true;
         }
     }
 
@@ -309,10 +322,10 @@ void Viewport::RenderViewport(Heiarchy &heiarchy)
             continue;
         if (node.type == NodeType::Camera)
             continue;
-        renderer->DrawScene(*node.model, node.textureID, node.GetTransformMatrix(), view, proj, camera->Position,
-                            heiarchy.nodes, 1.0f, node.roughness, node.metallic, timeOfDay, node.baseColor);
+        renderer->DrawScene(*node.model, node.textureID, node.GetWorldTransform(heiarchy.nodes), view, proj,
+                            camera->Position, heiarchy.nodes, 1.0f, node.roughness, node.metallic, timeOfDay,
+                            node.baseColor, node.textureScale, node.pixelated);
     }
-
     if (isDraggingModel && ghostModel)
     {
         glm::mat4 gt = glm::translate(glm::mat4(1.f), ghostPos);
@@ -360,10 +373,10 @@ void Viewport::RenderViewport(Heiarchy &heiarchy)
         if (node.type == NodeType::Camera)
         {
 
-             bool selected = (heiarchy.selectedIndex >= 0 &&
-                         &heiarchy.nodes[heiarchy.selectedIndex] == &node);
+            int nodeIdx = &node - &heiarchy.nodes[0];
+            bool selected = heiarchy.isSelected(nodeIdx);
             ImU32 col = selected ? IM_COL32(255, 230, 0, 255) : IM_COL32(0, 210, 255, 200);
-            CameraGizmoRenderer::Draw(node.GetTransformMatrix(), view, proj, imagePos, sz, node.fov, col);
+            CameraGizmoRenderer::Draw(node.GetWorldTransform(heiarchy.nodes), view, proj, imagePos, sz, node.fov, col);
         }
     }
 
@@ -407,13 +420,16 @@ void Viewport::RenderViewport(Heiarchy &heiarchy)
                     ghostPos = RaycastToGroundPlane(mousePos, imagePos, sz, proj, view);
                     if (p->IsDelivery())
                     {
+                        heiarchy.PushUndoState();
                         SceneNode n;
                         n.type = NodeType::Mesh;
                         n.model = ghostModel;
                         n.name = heiarchy.GetUniqueName(std::filesystem::path(path).stem().string());
                         n.position = ghostPos;
                         heiarchy.nodes.push_back(n);
-                        heiarchy.selectedIndex = (int)heiarchy.nodes.size() - 1;
+                        heiarchy.selectedIndices.clear();
+                        heiarchy.selectedIndices.push_back((int)heiarchy.nodes.size() - 1);
+                        heiarchy.lastClickedIndex = heiarchy.selectedIndices.back();
                         isDraggingModel = false;
                         ghostModel = nullptr;
                         ghostPath = "";
@@ -424,13 +440,30 @@ void Viewport::RenderViewport(Heiarchy &heiarchy)
                 {
                     if (p->IsDelivery())
                     {
-                        int sel = heiarchy.selectedIndex;
-                        if (sel >= 0 && sel < (int)heiarchy.nodes.size() && heiarchy.nodes[sel].type == NodeType::Mesh)
+                        int hoveredIndex = GetNodeUnderMouse(mouseInCanvas, sz, proj, view, heiarchy);
+                        if (hoveredIndex >= 0 && hoveredIndex < (int)heiarchy.nodes.size() &&
+                            heiarchy.nodes[hoveredIndex].type == NodeType::Mesh)
                         {
-                            heiarchy.nodes[sel].texturePath = path;
-                            heiarchy.nodes[sel].textureID = TextureLoader::Load(path);
-                            if (heiarchy.nodes[sel].model)
-                                heiarchy.nodes[sel].model->SetTexture(heiarchy.nodes[sel].textureID);
+                            heiarchy.PushUndoState();
+                            heiarchy.nodes[hoveredIndex].texturePath = path;
+                            heiarchy.nodes[hoveredIndex].textureID = TextureLoader::Load(path);
+                            if (heiarchy.nodes[hoveredIndex].model)
+                                heiarchy.nodes[hoveredIndex].model->SetTexture(heiarchy.nodes[hoveredIndex].textureID);
+                        }
+                        else
+                        {
+                            int sel = heiarchy.lastClickedIndex != -1
+                                          ? heiarchy.lastClickedIndex
+                                          : (heiarchy.selectedIndices.empty() ? -1 : heiarchy.selectedIndices.back());
+
+                            if (sel >= 0 && sel < (int)heiarchy.nodes.size() && !heiarchy.nodes[sel].isLightingNode)
+                            {
+                                heiarchy.PushUndoState();
+                                heiarchy.nodes[sel].texturePath = path;
+                                heiarchy.nodes[sel].textureID = TextureLoader::Load(path);
+                                if (heiarchy.nodes[sel].model)
+                                    heiarchy.nodes[sel].model->SetTexture(heiarchy.nodes[sel].textureID);
+                            }
                         }
                     }
                 }
@@ -455,41 +488,156 @@ void Viewport::RenderViewport(Heiarchy &heiarchy)
 
         DrawLightGizmos(heiarchy, view, proj, imagePos, sz);
 
-        int sel = heiarchy.selectedIndex;
-        if (sel >= 0 && sel < (int)heiarchy.nodes.size() && !heiarchy.nodes[sel].isLightingNode)
+        int sel = heiarchy.lastClickedIndex != -1
+                      ? heiarchy.lastClickedIndex
+                      : (heiarchy.selectedIndices.empty() ? -1 : heiarchy.selectedIndices.back());
+
+        const bool multiSelect = heiarchy.selectedIndices.size() > 1;
+
+        std::vector<int> validSel;
+        if (multiSelect)
         {
+            for (int idx : heiarchy.selectedIndices)
+                if (idx >= 0 && idx < (int)heiarchy.nodes.size() && !heiarchy.nodes[idx].isLightingNode)
+                    validSel.push_back(idx);
+        }
+
+        if (!multiSelect)
+        {
+
+            if (sel >= 0 && sel < (int)heiarchy.nodes.size() && !heiarchy.nodes[sel].isLightingNode)
+            {
+                ImGuizmo::OPERATION op = ImGuizmo::TRANSLATE;
+                if (currentTool == 1)
+                    op = ImGuizmo::ROTATE;
+                if (currentTool == 2)
+                    op = ImGuizmo::SCALE;
+
+                auto &target = heiarchy.nodes[sel];
+                glm::mat4 worldMat = target.GetWorldTransform(heiarchy.nodes);
+
+                ImGuizmo::AllowAxisFlip(false);
+                ImGuizmo::Manipulate(glm::value_ptr(view), glm::value_ptr(proj), op, ImGuizmo::LOCAL,
+                                     glm::value_ptr(worldMat));
+
+                static bool wasUsingGizmo = false;
+                if (ImGuizmo::IsUsing())
+                {
+                    if (!wasUsingGizmo)
+                    {
+                        heiarchy.PushUndoState();
+                        wasUsingGizmo = true;
+                    }
+
+                    glm::mat4 localMat = worldMat;
+                    if (target.parentIndex != -1)
+                    {
+                        const auto &parent = heiarchy.nodes[target.parentIndex];
+                        if (parent.type != NodeType::Folder && !target.isIndependent)
+                        {
+                            glm::mat4 parentWorld = parent.GetWorldTransform(heiarchy.nodes);
+                            localMat = glm::inverse(parentWorld) * worldMat;
+                        }
+                    }
+
+                    float t[3], r[3], s[3];
+                    ImGuizmo::DecomposeMatrixToComponents(glm::value_ptr(localMat), t, r, s);
+                    target.position = {t[0], t[1], t[2]};
+                    target.scale = {s[0], s[1], s[2]};
+
+                    if (target.type == NodeType::Mesh || target.type == NodeType::Empty)
+                    {
+                        target.rotation = {r[0], r[1], r[2]};
+                    }
+                    else
+                    {
+                        float pitch = r[0], yaw = r[1];
+                        float roll = (target.isLightingNode || target.type == NodeType::DirectionalLight) ? 0.0f : r[2];
+                        target.rotation = {pitch, yaw, roll};
+                        glm::quat q = glm::angleAxis(glm::radians(yaw), glm::vec3(0, 1, 0)) *
+                                      glm::angleAxis(glm::radians(pitch), glm::vec3(1, 0, 0)) *
+                                      glm::angleAxis(glm::radians(roll), glm::vec3(0, 0, 1));
+                        target.light.direction = glm::normalize(q * glm::vec3(0.f, -1.f, 0.f));
+                    }
+                }
+                else
+                {
+                    wasUsingGizmo = false;
+                }
+            }
+        }
+        else if (!validSel.empty())
+        {
+
             ImGuizmo::OPERATION op = ImGuizmo::TRANSLATE;
             if (currentTool == 1)
                 op = ImGuizmo::ROTATE;
             if (currentTool == 2)
                 op = ImGuizmo::SCALE;
 
-            auto &target = heiarchy.nodes[sel];
-            glm::mat4 mm = target.GetTransformMatrix();
-            ImGuizmo::AllowAxisFlip(false);
-            ImGuizmo::Manipulate(glm::value_ptr(view), glm::value_ptr(proj), op, ImGuizmo::LOCAL, glm::value_ptr(mm));
+            glm::vec3 centroid(0.f);
+            for (int idx : validSel)
+                centroid += heiarchy.nodes[idx].position;
+            centroid /= (float)validSel.size();
 
+            glm::mat4 gizmoMat = glm::translate(glm::mat4(1.f), centroid);
+            glm::mat4 prevGizmoMat = gizmoMat;
+
+            ImGuizmo::AllowAxisFlip(false);
+            ImGuizmo::Manipulate(glm::value_ptr(view), glm::value_ptr(proj), op, ImGuizmo::WORLD,
+                                 glm::value_ptr(gizmoMat));
+
+            static bool wasUsingGizmoMulti = false;
             if (ImGuizmo::IsUsing())
             {
-                float t[3], r[3], s[3];
-                ImGuizmo::DecomposeMatrixToComponents(glm::value_ptr(mm), t, r, s);
-                target.position = {t[0], t[1], t[2]};
-                target.scale = {s[0], s[1], s[2]};
+                if (!wasUsingGizmoMulti)
+                {
+                    heiarchy.PushUndoState();
+                    wasUsingGizmoMulti = true;
+                }
 
-                if (target.type == NodeType::Mesh)
+                float pt[3], pr[3], ps[3];
+                float nt[3], nr[3], ns[3];
+                ImGuizmo::DecomposeMatrixToComponents(glm::value_ptr(prevGizmoMat), pt, pr, ps);
+                ImGuizmo::DecomposeMatrixToComponents(glm::value_ptr(gizmoMat), nt, nr, ns);
+
+                glm::vec3 deltaPos = glm::vec3(nt[0] - pt[0], nt[1] - pt[1], nt[2] - pt[2]);
+                glm::vec3 deltaRot = glm::vec3(nr[0] - pr[0], nr[1] - pr[1], nr[2] - pr[2]);
+                glm::vec3 deltaScl = glm::vec3(ns[0] / ps[0], ns[1] / ps[1], ns[2] / ps[2]);
+
+                for (int idx : validSel)
                 {
-                    target.rotation = {r[0], r[1], r[2]};
+                    auto &node = heiarchy.nodes[idx];
+
+                    if (op == ImGuizmo::TRANSLATE)
+                    {
+                        node.position += deltaPos;
+                    }
+                    else if (op == ImGuizmo::ROTATE)
+                    {
+
+                        glm::mat4 toOrigin = glm::translate(glm::mat4(1.f), -centroid);
+                        glm::mat4 fromOrigin = glm::translate(glm::mat4(1.f), centroid);
+                        glm::mat4 rotX = glm::rotate(glm::mat4(1.f), glm::radians(deltaRot.x), glm::vec3(1, 0, 0));
+                        glm::mat4 rotY = glm::rotate(glm::mat4(1.f), glm::radians(deltaRot.y), glm::vec3(0, 1, 0));
+                        glm::mat4 rotZ = glm::rotate(glm::mat4(1.f), glm::radians(deltaRot.z), glm::vec3(0, 0, 1));
+                        glm::mat4 rot = rotY * rotX * rotZ;
+
+                        glm::vec4 rotatedPos = fromOrigin * rot * toOrigin * glm::vec4(node.position, 1.f);
+                        node.position = glm::vec3(rotatedPos);
+                        node.rotation += deltaRot;
+                    }
+                    else if (op == ImGuizmo::SCALE)
+                    {
+
+                        node.position = centroid + (node.position - centroid) * deltaScl;
+                        node.scale *= deltaScl;
+                    }
                 }
-                else
-                {
-                    float pitch = r[0], yaw = r[1];
-                    float roll = (target.isLightingNode || target.type == NodeType::DirectionalLight) ? 0.0f : r[2];
-                    target.rotation = {pitch, yaw, roll};
-                    glm::quat q = glm::angleAxis(glm::radians(yaw), glm::vec3(0, 1, 0)) *
-                                  glm::angleAxis(glm::radians(pitch), glm::vec3(1, 0, 0)) *
-                                  glm::angleAxis(glm::radians(roll), glm::vec3(0, 0, 1));
-                    target.light.direction = glm::normalize(q * glm::vec3(0.f, -1.f, 0.f));
-                }
+            }
+            else
+            {
+                wasUsingGizmoMulti = false;
             }
         }
 

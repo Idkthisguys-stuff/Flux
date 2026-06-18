@@ -66,10 +66,10 @@ void Runtime::Start(const std::string &projectName, const std::filesystem::path 
     SDL_ShowWindow(m_window);
     SDL_RaiseWindow(m_window);
 
-    SplashConfig splash;
+    /*SplashConfig splash;
     splash.title = "Flux Game";
     splash.subtitle = "Loading...";
-    Flux::RunSplashScreen(m_window, splash);
+    Flux::RunSplashScreen(m_window, splash);*/ // Ditch splash screen till UI support
 
     if (!SDL_GL_MakeCurrent(m_window, m_glContext))
     {
@@ -96,7 +96,14 @@ void Runtime::Start(const std::string &projectName, const std::filesystem::path 
         SceneNode newNode = node;
 
         if (node.model)
+        {
             newNode.model = std::make_shared<Model>(node.model->path);
+
+            for (size_t i = 0; i < node.model->meshes.size() && i < newNode.model->meshes.size(); ++i)
+            {
+                newNode.model->meshes[i].material = node.model->meshes[i].material;
+            }
+        }
 
         if (!node.texturePath.empty())
         {
@@ -313,11 +320,14 @@ void Runtime::Update()
         }
     }
 
+    glm::vec3 activeCamPos = cameraPos;
+    bool cameraFound = false;
+
     for (auto &node : m_gameNodes)
     {
         if (node.type == NodeType::Camera && node.isMainCamera)
         {
-            glm::mat4 transform = node.GetTransformMatrix();
+            glm::mat4 transform = node.GetWorldTransform(m_gameNodes);
             glm::vec3 camPos = node.position;
             glm::vec3 camFront = glm::normalize(glm::vec3(transform * glm::vec4(0, 0, -1, 0)));
             glm::vec3 camUp = glm::normalize(glm::vec3(transform * glm::vec4(0, 1, 0, 0)));
@@ -325,7 +335,30 @@ void Runtime::Update()
             view = glm::lookAt(camPos, camPos + camFront, camUp);
             proj =
                 glm::perspective(glm::radians(node.fov > 0.f ? node.fov : 70.0f), (float)w / (float)h, 0.1f, 2000.0f);
+            activeCamPos = camPos;
+            cameraFound = true;
             break;
+        }
+    }
+
+    if (!cameraFound)
+    {
+        for (auto &node : m_gameNodes)
+        {
+            if (node.type == NodeType::Camera)
+            {
+                glm::mat4 transform = node.GetWorldTransform(m_gameNodes);
+                glm::vec3 camPos = node.position;
+                glm::vec3 camFront = glm::normalize(glm::vec3(transform * glm::vec4(0, 0, -1, 0)));
+                glm::vec3 camUp = glm::normalize(glm::vec3(transform * glm::vec4(0, 1, 0, 0)));
+
+                view = glm::lookAt(camPos, camPos + camFront, camUp);
+                proj = glm::perspective(glm::radians(node.fov > 0.f ? node.fov : 70.0f), (float)w / (float)h, 0.1f,
+                                        2000.0f);
+                activeCamPos = camPos;
+                cameraFound = true;
+                break;
+            }
         }
     }
 
@@ -335,9 +368,10 @@ void Runtime::Update()
     {
         if (node.model)
         {
-            glm::mat4 modelMat = node.GetTransformMatrix();
-            m_renderer.DrawScene(*node.model, node.textureID, modelMat, view, proj, cameraPos, m_gameNodes, 1.0f,
-                                 node.roughness, node.metallic, gameTime, node.baseColor);
+            glm::mat4 modelMat = node.GetWorldTransform(m_gameNodes);
+            m_renderer.DrawScene(*node.model, node.textureID, modelMat, view, proj, activeCamPos, m_gameNodes, 1.0f,
+                                 node.roughness, node.metallic, gameTime, node.baseColor, node.textureScale,
+                                 node.pixelated);
         }
     }
 
@@ -353,6 +387,9 @@ void Runtime::Stop()
 {
     if (!isRunning)
         return;
+
+    if (m_window)
+        SDL_SetWindowRelativeMouseMode(m_window, false);
 
     Output::addLog("Stopping runtime...");
 
@@ -386,9 +423,6 @@ void Runtime::Stop()
     if (m_glContext && m_window)
     {
         SDL_GL_MakeCurrent(m_window, m_glContext);
-        for (auto &[path, id] : m_runtimeTextureCache)
-            if (id)
-                glDeleteTextures(1, &id);
         m_runtimeTextureCache.clear();
     }
 

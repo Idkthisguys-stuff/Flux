@@ -1,4 +1,4 @@
-﻿#include <iostream>
+#include <iostream>
 #include "core/Window.h"
 #include <string>
 #include <cstdlib>
@@ -9,7 +9,7 @@ using namespace std;
 int main()
 {
 	SDL_Init(SDL_INIT_VIDEO);
-	Flux::Window window(1920, 1080, "Flux");
+	Flux::Window window(1920, 1080, "Flux Engine");
 
 	while (!window.shouldClose()) {
 		window.clear(0.1f, 0.1f, 0.1f, 1.0f);
