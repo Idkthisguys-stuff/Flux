@@ -1,92 +1,121 @@
 #pragma once
 
+#include "../lib/portable-file-dialogs.h"
 #include "imgui.h"
-#include "viewport.h"
 #include "texteditor.h"
+#include "viewport.h"
 #include <filesystem>
 #include <fstream>
-#include <vector>
 #include <string>
-#include "../lib/portable-file-dialogs.h"
+#include <vector>
 
 #include "core/SceneSerializer.h"
 
-#include "ribbon.h"
 #include "heiarchy.h"
+#include "ribbon.h"
 
 class TextEditor;
 
-namespace Flux {
-	enum class fileType { Folder, Script, Text, Model, Texture };
+namespace Flux
+{
+enum class fileType
+{
+    Folder,
+    Script,
+    Text,
+    Model,
+    Texture,
+    Scene,
+    Project
+};
 
-	struct virtualFile
-	{
-		std::string name;
-		fileType type;
-		std::filesystem::path path;
-		std::vector<virtualFile> children;
-	};
+struct virtualFile
+{
+    std::string name;
+    fileType type;
+    std::filesystem::path path;
+    std::vector<virtualFile> children;
+};
 
-	struct creationTask
-	{
-		std::string defaultName;
-		std::string extension;
-		bool pending = false;
-	};
+struct creationTask
+{
+    std::string defaultName;
+    std::string extension;
+    bool pending = false;
+};
 
-	class Viewport;
-	class SceneSerializer;
+class Viewport;
+class SceneSerializer;
 
-	class Ribbon;
+class Ribbon;
 
-	class Explorer {
-	public:
-		void renderExplorer(Viewport& viewport);
+class Assets
+{
+  public:
+    void renderExplorer(Viewport &viewport);
+    void TriggerCreateNewProject();
+    void TriggerOpenProject();
+    void TriggerSaveScene();
+    void TriggerSaveSceneAs();
+    void TriggerOpenScene();
 
-		bool refreshRequested = false;
-		std::filesystem::path refreshPath;
-		std::filesystem::path activeFolderPath;
-		virtualFile projectRoot = { "Project", fileType::Folder };
-		creationTask pendingCreationTask;
-		std::filesystem::path pathToDelete = "";
+    std::filesystem::path selectedAssetPath;
+    void syncFiles(const std::filesystem::path &path, virtualFile &node);
 
-		std::vector<std::filesystem::path> filesWithBackups;
+    bool refreshRequested = false;
+    std::filesystem::path refreshPath;
+    std::filesystem::path activeFolderPath;
+    virtualFile projectRoot = {"Project", fileType::Folder};
+    creationTask pendingCreationTask;
+    std::filesystem::path pathToDelete = "";
 
-		void scanForBackups();
+    std::vector<std::filesystem::path> filesWithBackups;
 
-		::TextEditor* textEditor = nullptr;
+    void scanForBackups();
 
-		Heiarchy h;
+    ::TextEditor *textEditor = nullptr;
 
-		Ribbon* ribbonPtr = nullptr;
+    Heiarchy h;
 
-		std::filesystem::path activeFilePath;
-		std::string activeScriptName;
-		bool isEditorVisible = false;
-		bool isEditorUnsaved = false;
+    Ribbon *ribbonPtr = nullptr;
 
-	private:
-		void DrawVirtualNodes(virtualFile& file);
-		void syncFiles(const std::filesystem::path& path, virtualFile& node);
-		void copyTemplateItem(const std::string& folderType,
-							  const std::string& templateName,
-							  const std::string& targetBaseName,
-							  const std::string& ext);
-		void createNewFolder(const std::string& name);
+    std::filesystem::path activeFilePath;
+    std::string activeScriptName;
+    bool isEditorVisible = false;
+    bool isEditorUnsaved = false;
 
-		std::filesystem::path resolveUniqueName(
-			const std::filesystem::path& parentDir,
-			const std::string& baseStem,
-			const std::string& ext) const;
+  private:
+    void DrawVirtualNodes(virtualFile &file);
+    void DrawFolderTree(virtualFile &file);
+    void DrawAssetIcon(ImDrawList *drawList, ImVec2 pos, ImVec2 size, fileType type, unsigned int texID);
+    virtualFile *FindFolderNode(virtualFile *current, const std::filesystem::path &path);
 
-		virtualFile* renamingNode = nullptr;
-		char         renameBuffer[256] = {};
+    void copyTemplateItem(const std::string &folderType, const std::string &templateName,
+                          const std::string &targetBaseName, const std::string &ext);
+    void createNewFolder(const std::string &name);
 
-		bool showNewProjectModal     = false;
-		bool showOpenProjectModal    = false;
-		char newProjectNameBuf[256]  = "NewGame";
-		std::filesystem::path pendingTemplateRoot;
-		std::filesystem::file_time_type lastFolderTime;
-		char projectLocationBuf[512] = "";
-	};
-}
+    std::filesystem::path resolveUniqueName(const std::filesystem::path &parentDir, const std::string &baseStem,
+                                            const std::string &ext) const;
+
+    virtualFile *renamingNode = nullptr;
+    char renameBuffer[256] = {};
+
+    bool showNewProjectModal = false;
+    bool showOpenProjectModal = false;
+    char newProjectNameBuf[256] = "NewGame";
+    std::filesystem::path pendingTemplateRoot;
+    std::filesystem::file_time_type lastFolderTime;
+    char projectLocationBuf[512] = "";
+
+    enum class ClipboardOp
+    {
+        None,
+        Copy,
+        Cut
+    };
+    ClipboardOp m_clipboardOp = ClipboardOp::None;
+    std::filesystem::path m_clipboardSourcePath = "";
+
+    void openInNativeExplorer(const std::filesystem::path& path);
+};
+} // namespace Flux

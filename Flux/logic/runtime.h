@@ -35,7 +35,7 @@ class Runtime
 
   private:
     SDL_Window *m_window = nullptr;
-    SDL_GLContext m_glContext;
+    SDL_GLContext m_glContext = nullptr;
     TextureLoader m_textureLoader;
     Renderer3D m_renderer;
     LuaEngine m_luaEngine;

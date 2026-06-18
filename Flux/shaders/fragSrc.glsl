@@ -7,34 +7,46 @@ in vec2 TexCoords;
 in vec4 FragPosLightSpace;
 in mat3 TBN;
 
-uniform bool      hasTexture;
-uniform bool      isSelected;
-uniform sampler2D albedoMap;
-uniform vec3      matColor;
-uniform float     roughness;
-uniform float     metallic;
-uniform float     alpha;
+uniform bool hasTexture;
+uniform bool hasAlpha;
+uniform bool isSelected;
+
+uniform sampler2D albedoMap; // GL_TEXTURE0
+uniform sampler2D normalMap; // GL_TEXTURE1
+uniform sampler2D metallicMap; // GL_TEXTURE2
+uniform sampler2D roughnessMap; // GL_TEXTURE3
+uniform sampler2D aoMap; // GL_TEXTURE4
+
+uniform vec3 matColor;
+uniform float roughness;
+uniform float metallic;
+uniform float alpha;
+
+uniform bool hasNormalMap;
+uniform bool hasMetallicMap;
+uniform bool hasRoughnessMap;
+uniform bool hasAoMap;
 
 uniform vec3 viewPos;
 
 uniform sampler2D shadowMap;
-uniform bool      hasShadowMap;
+uniform bool hasShadowMap;
 
-uniform bool  hasSunLight;
-uniform vec3  sunLightDir;
-uniform vec3  sunLightColor;
+uniform bool hasSunLight;
+uniform vec3 sunLightDir;
+uniform vec3 sunLightColor;
 uniform float sunLightIntensity;
 
-uniform bool  hasMoonLight;
-uniform vec3  moonLightDir;
-uniform vec3  moonLightColor;
+uniform bool hasMoonLight;
+uniform vec3 moonLightDir;
+uniform vec3 moonLightColor;
 uniform float moonLightIntensity;
 uniform float timeOfDay;
 
 #define MAX_POINT 8
-uniform int   numPointLights;
-uniform vec3  pointPos      [MAX_POINT];
-uniform vec3  pointColor    [MAX_POINT];
+uniform int numPointLights;
+uniform vec3 pointPos [MAX_POINT];
+uniform vec3 pointColor    [MAX_POINT];
 uniform float pointIntensity[MAX_POINT];
 uniform float pointRange    [MAX_POINT];
 
@@ -93,10 +105,15 @@ float ShadowFactor(vec4 fragPosLS, vec3 N, vec3 L) {
 
     vec3 proj = fragPosLS.xyz / fragPosLS.w;
     proj = proj * 0.5 + 0.5;
+
+    if (proj.z > 1.0 || proj.z < 0.0) return 1.0;
+    if (proj.x < 0.0 || proj.x > 1.0 ||
+        proj.y < 0.0 || proj.y > 1.0) return 1.0;
+
     if (proj.z > 1.0) return 1.0;
 
     float cosTheta = clamp(dot(N, L), 0.0, 1.0);
-    float bias = mix(0.001, 0.0002, cosTheta);
+    float bias = max(0.005 * (1.0 - cosTheta), 0.0002);
 
     vec2 ts = 1.0 / vec2(textureSize(shadowMap, 0));
 
@@ -130,18 +147,35 @@ vec3 PBRContrib(vec3 N, vec3 V, vec3 L, vec3 lightColor,
 }
 
 void main() {
+    vec4 texSample = hasTexture ? texture(albedoMap, TexCoords) : vec4(1.0);
+
+    if (hasAlpha && texSample.a < 0.1)
+        discard;
+
     vec3 albedo;
     if (hasTexture) {
-        albedo = pow(texture(albedoMap, TexCoords).rgb, vec3(2.2));
+        albedo = pow(texSample.rgb, vec3(2.2));
     } else {
         albedo = pow(max(matColor, vec3(0.001)), vec3(2.2));
     }
 
-    vec3 N  = normalize(Normal);
+    vec3 N;
+    if (hasNormalMap) {
+        vec3 localNormal = texture(normalMap, TexCoords).rgb;
+        localNormal = normalize(localNormal * 2.0 - 1.0);
+        N = normalize(TBN * localNormal);
+    } else {
+        N = normalize(Normal);
+    }
+
     vec3 V  = normalize(viewPos - FragPos);
 
-    vec3 F0 = mix(vec3(0.04), albedo, metallic);
+    float actMetallic = hasMetallicMap ? texture(metallicMap, TexCoords).r * metallic : metallic;
+    float actRoughness = hasRoughnessMap ? texture(roughnessMap, TexCoords).r * roughness : roughness;
+    float actAO = hasAoMap ? texture(aoMap, TexCoords).r : 1.0;
 
+    vec3 F0 = mix(vec3(0.04), albedo, actMetallic);
+    
     float tod = timeOfDay;
     float dayT = clamp(sin(((tod - 6.0) / 24.0) * PI * 2.0 - PI * 0.5) * 0.5 + 0.5, 0.0, 1.0);
     vec3 ambientColor = mix(vec3(0.02, 0.03, 0.08),
@@ -158,16 +192,14 @@ void main() {
     if (hasSunLight) {
         vec3  L      = normalize(-sunLightDir);
         float shadow = ShadowFactor(FragPosLightSpace, N, L);
-        Lo += PBRContrib(N, V, L,
-                         sunLightColor * sunLightIntensity,
-                         1.0, albedo, F0, roughness, metallic) * shadow;
+        Lo += PBRContrib(N, V, L, sunLightColor * sunLightIntensity, 1.0, albedo, F0, actRoughness, actMetallic) * shadow;
     }
 
     if (hasMoonLight) {
         vec3 L = normalize(-moonLightDir);
         Lo += PBRContrib(N, V, L,
                          moonLightColor * moonLightIntensity,
-                         1.0, albedo, F0, roughness, metallic);
+                         1.0, albedo, F0, actRoughness, actMetallic);
     }
 
     for (int i = 0; i < numPointLights; i++) {
@@ -178,7 +210,7 @@ void main() {
         float att  = PointAttenuation(dist, pointRange[i]) * pointRange[i] * pointRange[i];
         Lo += PBRContrib(N, V, L,
                          pointColor[i] * pointIntensity[i],
-                         att, albedo, F0, roughness, metallic);
+                         att, albedo, F0, actRoughness, actMetallic);
     }
 
     for (int i = 0; i < numSpotLights; i++) {
@@ -197,12 +229,14 @@ void main() {
         float att = PointAttenuation(dist, spotRange[i]) * spotRange[i] * spotRange[i];
         Lo += PBRContrib(N, V, L,
                          spotColor[i] * spotIntensity[i],
-                         att * spotFactor, albedo, F0, roughness, metallic);
+                         att * spotFactor, albedo, F0, actRoughness, actMetallic);
     }
 
     vec3 Fenv = FresnelSchlickRoughness(max(dot(N, V), 0.0), F0, roughness);
     vec3 kD_env = (vec3(1.0) - Fenv) * (1.0 - metallic);
     vec3 ambient = ambientColor * kD_env * albedo;
+
+    ambient *= actAO;
 
     float hemi = 0.5 + 0.5 * dot(N, vec3(0.0, 1.0, 0.0));
     ambient += Fenv * mix(ambientColor, ambientColor * 1.5, hemi) * (1.0 - roughness) * 0.15;
@@ -217,5 +251,5 @@ void main() {
         color += vec3(0.2, 0.2, 0.0); 
     }
 
-    FragColor = vec4(color, alpha);
+    FragColor = vec4(color, hasAlpha ? (texSample.a * alpha) : alpha);
 }

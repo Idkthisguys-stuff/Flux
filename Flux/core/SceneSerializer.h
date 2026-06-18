@@ -39,6 +39,8 @@ class SceneSerializer
             {
                 n["modelPath"] = std::filesystem::relative(node.model->path, projectRoot).string();
             }
+            n["textureScale"] = {node.textureScale.x, node.textureScale.y};
+            n["pixelated"] = node.pixelated;
 
             n["baseColor"] = {node.baseColor.r, node.baseColor.g, node.baseColor.b};
 
@@ -76,11 +78,31 @@ class SceneSerializer
             n["velocity"] = {node.velocity.x, node.velocity.y, node.velocity.z};
             n["isAnchored"] = node.isAnchored;
 
+            if (node.model && !node.model->meshes.empty())
+            {
+                Material &mat = node.model->meshes[0].material;
+
+                // save Albedo path from material or fall back to node path if material is unpopulated
+                std::string albedo = mat.albedoPath.empty() ? node.texturePath : mat.albedoPath;
+                n["albedoMap"] = albedo.empty() ? "" : std::filesystem::relative(albedo, projectRoot).string();
+
+                n["normalMap"] =
+                    mat.normalPath.empty() ? "" : std::filesystem::relative(mat.normalPath, projectRoot).string();
+                n["metallicMap"] =
+                    mat.metallicPath.empty() ? "" : std::filesystem::relative(mat.metallicPath, projectRoot).string();
+                n["roughnessMap"] =
+                    mat.roughnessPath.empty() ? "" : std::filesystem::relative(mat.roughnessPath, projectRoot).string();
+                n["aoMap"] = mat.aoPath.empty() ? "" : std::filesystem::relative(mat.aoPath, projectRoot).string();
+            }
+
+            n["parentIndex"] = node.parentIndex;
+            n["isIndependent"] = node.isIndependent;
+
             j["nodes"].push_back(n);
         }
+        j["version"] = 2;
         std::ofstream file(filePath);
         file << j.dump(4);
-        j["version"] = 2;
     }
 
     static void Load(Heiarchy &h, const std::filesystem::path &loadPath, const std::filesystem::path &projectRoot)
@@ -156,9 +178,21 @@ class SceneSerializer
                 n.textureID = TextureLoader::Load(absoluteTex.string());
 
                 unsigned int id = TextureLoader::Load(absoluteTex.string());
-                Output::addLog("Loaded texture: " + absoluteTex.string() + " -> ID " + std::to_string(id));
+                // Output::addLog("Loaded texture: " + absoluteTex.string() + " -> ID " + std::to_string(id));
                 n.textureID = id;
             }
+
+            if (jNode.contains("textureScale") && jNode["textureScale"].is_array() && jNode["textureScale"].size() == 2)
+            {
+                n.textureScale =
+                    glm::vec2(jNode["textureScale"][0].get<float>(), jNode["textureScale"][1].get<float>());
+            }
+            else
+            {
+                n.textureScale = glm::vec2(1.0f, 1.0f);
+            }
+
+            n.pixelated = jNode.value("pixelated", false);
 
             if (n.type == NodeType::Camera && !jNode.contains("fov"))
                 n.fov = 70.0f;
@@ -195,8 +229,41 @@ class SceneSerializer
                 if (std::filesystem::exists(iconPath))
                     n.textureID = TextureLoader::Load(iconPath);
             }
+
+            if (n.model && !n.model->meshes.empty())
+            {
+                auto loadMap = [&](const std::string &key, unsigned int &idOut, std::string &pathOut) {
+                    if (jNode.contains(key) && !jNode[key].get<std::string>().empty())
+                    {
+                        std::filesystem::path absPath = projectRoot / jNode[key].get<std::string>();
+                        pathOut = absPath.string();
+                        idOut = TextureLoader::Load(pathOut);
+                    }
+                };
+
+                for (auto &mesh : n.model->meshes)
+                {
+                    loadMap("albedoMap", mesh.material.albedoMap, mesh.material.albedoPath);
+                    loadMap("normalMap", mesh.material.normalMap, mesh.material.normalPath);
+                    loadMap("metallicMap", mesh.material.metallicMap, mesh.material.metallicPath);
+                    loadMap("roughnessMap", mesh.material.roughnessMap, mesh.material.roughnessPath);
+                    loadMap("aoMap", mesh.material.aoMap, mesh.material.aoPath);
+                }
+
+                if (!n.model->meshes[0].material.albedoPath.empty())
+                {
+                    n.texturePath = n.model->meshes[0].material.albedoPath;
+                    n.textureID = n.model->meshes[0].material.albedoMap;
+                }
+            }
+
+            n.parentIndex = jNode.value("parentIndex", -1);
+            n.isIndependent = jNode.value("isIndependent", false);
+
             h.nodes.push_back(n);
         }
+        h.undoStack.clear();
+        h.redoStack.clear();
     }
 };
 } // namespace Flux

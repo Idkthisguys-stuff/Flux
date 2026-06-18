@@ -54,6 +54,9 @@ namespace Flux {
         bool                   isDraggingModel = false;
 
         float CheckSphereHit(glm::vec3 ro, glm::vec3 rd, glm::vec3 center, float radius);
+        int GetNodeUnderMouse(ImVec2 mousePos, ImVec2 sz,
+                              glm::mat4 proj, glm::mat4 view,
+                              Heiarchy& heiarchy);
         void HandleObjectSelection(ImVec2 mousePos, ImVec2 sz,
                                    glm::mat4 proj, glm::mat4 view,
                                    Heiarchy& heiarchy);

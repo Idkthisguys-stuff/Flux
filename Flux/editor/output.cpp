@@ -9,36 +9,53 @@ void Output::addLog(const std::string &log)
 
 void Output::renderOutput()
 {
-    ImGui::Begin("Output");
+    ImGui::Begin("Console");
 
-    if (ImGui::Button("Clear Output"))
+    if (ImGui::Button("Clear"))
     {
         logBuffer.clear();
     }
+    ImGui::SameLine();
+    static bool autoScroll = true;
+    ImGui::Checkbox("Auto-scroll", &autoScroll);
 
     ImGui::Separator();
-    ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0, 0, 0, 1));
-    ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
 
-    if (ImGui::BeginChild("ScrollingRegion", ImVec2(0, 0), ImGuiChildFlags_None, ImGuiWindowFlags_HorizontalScrollbar))
+    if (ImGui::BeginChild("ConsoleScrollingRegion", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar))
     {
+        size_t start = 0;
+        size_t end = logBuffer.find('\n');
+        while (end != std::string::npos)
+        {
+            std::string line = logBuffer.substr(start, end - start);
+            if (!line.empty())
+            {
+                ImVec4 color = ImVec4(0.85f, 0.85f, 0.85f, 1.00f); // Default (white/light grey)
+                if (line.find("Warning") != std::string::npos || line.find("WARNING") != std::string::npos)
+                {
+                    color = ImVec4(1.0f, 0.8f, 0.2f, 1.0f); // Yellow
+                }
+                else if (line.find("ERROR") != std::string::npos || line.find("Error") != std::string::npos || line.find("FATAL") != std::string::npos || line.find("Failed") != std::string::npos)
+                {
+                    color = ImVec4(1.0f, 0.35f, 0.3f, 1.0f); // Red/Orange
+                }
+                else if (line.find("SUCCESS") != std::string::npos || line.find("success") != std::string::npos || line.find("Imported") != std::string::npos)
+                {
+                    color = ImVec4(0.2f, 0.7f, 0.3f, 1.00f); // Green
+                }
 
-        float wrapWidth = ImGui::GetContentRegionAvail().x;
-        ImVec2 textSize = ImGui::CalcTextSize(logBuffer.c_str(), nullptr, false, wrapWidth);
+                ImGui::TextColored(color, "%s", line.c_str());
+            }
+            start = end + 1;
+            end = logBuffer.find('\n', start);
+        }
 
-        ImGui::InputTextMultiline("##ConsoleOut", (char *)logBuffer.c_str(), logBuffer.size() + 1,
-                                  ImVec2(-1.0f, textSize.y + 10.0f),
-                                  ImGuiInputTextFlags_ReadOnly | ImGuiInputTextFlags_NoHorizontalScroll);
-
-        if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 20.0f)
+        if (autoScroll)
         {
             ImGui::SetScrollHereY(1.0f);
         }
     }
     ImGui::EndChild();
-
-    ImGui::PopStyleVar();
-    ImGui::PopStyleColor();
     ImGui::End();
 }
 } // namespace Flux

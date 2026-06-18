@@ -31,7 +31,7 @@ namespace Flux {
 
 	class LuaEngine;
 
-	class Explorer;
+	class Assets;
 
 	class Viewport;
 
@@ -44,22 +44,29 @@ namespace Flux {
 
 			LuaEngine* luaEnginePtr = nullptr;
 			::TextEditor* textEditorPtr = nullptr;
-			Explorer* explorerPtr = nullptr;
+			Assets* explorerPtr = nullptr;
 			Heiarchy* heiarchyPtr = nullptr;
 			Viewport* viewportPtr = nullptr;
 			ProjectSettings projectSettings;
+			std::string lastProjectPath;
 
 			bool showPreferences = false;
 			bool showProjectSettings = false;
 
 			void LoadPreferences();
 			void SavePreferences();
+			int GetTheme() const { return theme; }
 			void SaveProjectSettings(const std::filesystem::path& projectRoot);
 			void LoadProjectSettings(const std::filesystem::path& projectRoot);
+
+			void TriggerSaveScene();
+			void TriggerSaveSceneAs();
+			void TriggerOpenScene();
 
 		private:
 			void drawFileMenu();
 			void drawEditMenu();
+			void drawGameObjectMenu();
 			void drawProjectControls();
 			void drawTransformTools();
 			float camSpeed = 10.0f;

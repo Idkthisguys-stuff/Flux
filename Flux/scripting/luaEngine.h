@@ -1,52 +1,80 @@
 #pragma once
 
-#include <lua.hpp>
-#include <lua.h>
+extern "C" {
+    #include <lua.h>
+    #include <lualib.h>
+    #include <lauxlib.h>
+}
 
 #define SOL_ALL_SAFETIES_ON 1
-#include <sol/sol.hpp>
-#include <string>
-#include <iostream>
 #include "editor/output.h"
 #include <filesystem>
 #include <fstream>
+#include <iostream>
+#include <sol/sol.hpp>
+#include <string>
 
 #include <logic/data/Scenenode.h>
 
 #include <SDL3/SDL.h>
 
-namespace Flux {
-    class Output;
+namespace Flux
+{
+class Output;
 
-    class LuaEngine {
-        public:
-            LuaEngine() = default;
-            ~LuaEngine() = default;
+class LuaEngine
+{
+  public:
+    LuaEngine() = default;
+    ~LuaEngine() = default;
 
-            bool isRunning = false;
+    bool isRunning = false;
 
-            void init();
-            void step();
+    void init();
+    void step();
 
-            void start();
-            void stop();
+    void start();
+    void stop();
 
-            void runScript(const std::string& code);
+    void runScript(const std::string &code);
+    void runAllScriptsInFolder(const std::string &folderPath);
 
-            void runAllScriptsInFolder(const std::string& folderPath);
+    std::vector<SceneNode> *activeNodes = nullptr;
 
-            std::vector<SceneNode>* activeNodes = nullptr; 
-            
-            void bindEngineAPI();
+    void bindEngineAPI();
 
-        private:
-            sol::state lua;
-            sol::protected_function luaOnStart;
-            sol::protected_function luaOnUpdate;
-            sol::protected_function luaOnEnd;
+  private:
+    sol::state lua;
 
-            std::vector<sol::protected_function> m_startFuncs;
-            std::vector<sol::protected_function> m_updateFuncs;
-            std::vector<sol::environment> m_environments;
+    // luaOnStart / luaOnUpdate / luaOnEnd were declared here but never
+    // assigned by any code path (scripts are registered via
+    // runScript -> m_startFuncs / m_updateFuncs instead).
+    // Calling luaOnEnd.valid() on an unassigned sol::protected_function
+    // internally dereferences a null lua_State pointer -> crash.
+    // Removed entirely; per-script callbacks live in the vectors below.
+
+    std::vector<sol::protected_function> m_startFuncs;
+    std::vector<sol::protected_function> m_updateFuncs;
+    std::vector<sol::environment> m_environments;
+
+    struct DelayedTask
+    {
+        int handle;
+        float remaining; // seconds left
+        sol::protected_function fn;
+        bool cancelled = false;
     };
-}
+
+    struct SpawnedTask
+    {
+        int handle;
+        sol::thread runner;
+        sol::coroutine co;
+        bool cancelled = false;
+    };
+
+    std::vector<DelayedTask> m_delayedTasks;
+    std::vector<SpawnedTask> m_spawnedTasks;
+    int m_nextTaskHandle = 0;
+};
+} // namespace Flux

@@ -15,7 +15,7 @@ namespace Flux {
         void Init();
 
         void InitShadowMap(int resolution = 4096);
-        void DrawDepthPass(const std::vector<SceneNode>& nodes, glm::vec3 lightDir);
+        void DrawDepthPass(const std::vector<SceneNode>& nodes, glm::vec3 lightDir, glm::vec3 cameraPos = glm::vec3(0.f));
 
         void DrawScene(Model& model, unsigned int overrideTexID,
                        glm::mat4 modelMatrix, glm::mat4 view, glm::mat4 proj,
@@ -25,7 +25,9 @@ namespace Flux {
                        float roughness   = 0.7f,
                        float metallic    = 0.0f,
                        float timeOfDay   = 14.0f,
-                       glm::vec3 baseColor = glm::vec3(-1.f)); // -1 = use mesh mtl
+                       glm::vec3 baseColor = glm::vec3(-1.f),
+                       glm::vec2 textureScale = glm::vec2(1.0f, 1.0f),
+                       bool pixelated = false); // -1 = use mesh mtl
 
         void DrawBillboard(unsigned int texID, glm::vec3 worldPos, float size,
                            glm::mat4 view, glm::mat4 proj);

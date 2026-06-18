@@ -10,8 +10,11 @@
 #include <ShObjIdl.h>
 #include <propkey.h>
 
+#include "editor/themes/themes.h"
+
 namespace Flux
 {
+
 Window::Window(int width, int height, const std::string &title) : m_width(width), m_height(height), m_title(title)
 {
     if (!SDL_Init(SDL_INIT_VIDEO))
@@ -142,9 +145,92 @@ Window::Window(int width, int height, const std::string &title) : m_width(width)
     ImGui_ImplSDL3_InitForOpenGL(m_window, m_glContext);
     ImGui_ImplOpenGL3_Init("#version 410");
 
+    ApplyTheme(m_ribbon.GetTheme());
+
     m_viewport.Init();
     m_heiarchy.setup();
     m_luaEngine.init();
+
+    // Auto-load last project or fallback to default UntitledProject
+    std::filesystem::path projectToLoad = m_ribbon.lastProjectPath;
+    if (projectToLoad.empty() || !std::filesystem::exists(projectToLoad))
+    {
+        const char* home = std::getenv("HOME");
+        if (!home) home = std::getenv("USERPROFILE");
+        if (home)
+        {
+            std::filesystem::path defaultProj = std::filesystem::path(home) / "FluxProjects" / "UntitledProject";
+            std::filesystem::create_directories(defaultProj);
+            
+            // Copy template if empty or doesn't exist
+            std::filesystem::path templatePath = PathHelper::GetAssetPath("templates/Project_Templates/base_game_folder_lua");
+            if (std::filesystem::exists(templatePath))
+            {
+                try {
+                    for (const auto& entry : std::filesystem::recursive_directory_iterator(templatePath)) {
+                        const auto& path = entry.path();
+                        auto relative = std::filesystem::relative(path, templatePath);
+                        auto dest = defaultProj / relative;
+                        if (entry.is_directory()) {
+                            std::filesystem::create_directories(dest);
+                        } else {
+                            if (!std::filesystem::exists(dest)) {
+                                std::filesystem::copy_file(path, dest);
+                            }
+                        }
+                    }
+                } catch (const std::exception& e) {
+                    std::cerr << "Failed to copy default templates: " << e.what() << std::endl;
+                }
+            }
+            
+            // Create UntitledProject.flux project file if not exists
+            std::filesystem::path projFile = defaultProj / "UntitledProject.flux";
+            if (!std::filesystem::exists(projFile))
+            {
+                nlohmann::json pj;
+                pj["projectName"] = "UntitledProject";
+                pj["startupScene"] = "scene.fscn";
+                pj["currentScene"] = "scene.fscn";
+                std::ofstream(projFile) << pj.dump(4);
+            }
+            
+            // Save default scene to UntitledProject/scene.fscn if not exists
+            std::filesystem::path scenePath = defaultProj / "scene.fscn";
+            if (!std::filesystem::exists(scenePath))
+            {
+                SceneSerializer::Save(m_heiarchy, scenePath.string(), defaultProj);
+            }
+            
+            projectToLoad = defaultProj;
+        }
+    }
+    
+    if (!projectToLoad.empty() && std::filesystem::exists(projectToLoad))
+    {
+        m_explorer.activeFolderPath = projectToLoad;
+        m_explorer.projectRoot.path = projectToLoad;
+        m_explorer.projectRoot.name = projectToLoad.filename().string();
+        m_explorer.syncFiles(projectToLoad, m_explorer.projectRoot);
+        m_explorer.scanForBackups();
+        
+        m_viewport.activeProjectPath = projectToLoad;
+        m_ribbon.lastProjectPath = projectToLoad.string();
+        m_ribbon.SavePreferences();
+        
+        // Load the scene saved in project settings or default to scene.fscn / main.fscn
+        m_ribbon.LoadProjectSettings(projectToLoad);
+        std::string sceneName = std::strlen(m_ribbon.projectSettings.currentScene) > 0 ? m_ribbon.projectSettings.currentScene : "scene.fscn";
+        std::filesystem::path scenePath = sceneName;
+        if (!scenePath.is_absolute())
+        {
+            scenePath = projectToLoad / scenePath;
+        }
+        if (std::filesystem::exists(scenePath))
+        {
+            SceneSerializer::Load(m_heiarchy, scenePath, projectToLoad);
+        }
+    }
 }
 
 Window::~Window()
@@ -207,12 +293,6 @@ void Window::update()
 
         if (event.type == SDL_EVENT_KEY_DOWN)
         {
-
-            if (event.key.key == SDLK_ESCAPE)
-            {
-                m_shouldClose = true;
-            }
-
             if (io.WantCaptureKeyboard)
             {
 
@@ -244,6 +324,43 @@ void Window::update()
                 m_pendingStop = true;
             }
             break;
+        case SDL_EVENT_DROP_FILE:
+            if (!m_explorer.activeFolderPath.empty())
+            {
+                std::filesystem::path srcPath(event.drop.data);
+                std::string ext = srcPath.extension().string();
+                std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+
+                std::filesystem::path destFolder = m_explorer.activeFolderPath;
+                if (ext == ".obj" || ext == ".fbx")
+                    destFolder /= "models";
+                else if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".bmp" || ext == ".tga")
+                    destFolder /= "textures";
+
+                std::filesystem::create_directories(destFolder);
+                std::filesystem::path destPath = destFolder / srcPath.filename();
+                try
+                {
+                    std::filesystem::copy_file(srcPath, destPath, std::filesystem::copy_options::overwrite_existing);
+                    if (ext == ".obj")
+                    {
+                        std::filesystem::path mtlSrc = srcPath;
+                        mtlSrc.replace_extension(".mtl");
+                        if (std::filesystem::exists(mtlSrc))
+                        {
+                            std::filesystem::path mtlDest = destFolder / mtlSrc.filename();
+                            std::filesystem::copy_file(mtlSrc, mtlDest, std::filesystem::copy_options::overwrite_existing);
+                        }
+                    }
+                    m_explorer.refreshRequested = true;
+                    Output::addLog("Imported asset: " + srcPath.filename().string());
+                }
+                catch (const std::exception &e)
+                {
+                    Output::addLog("Import failed: " + std::string(e.what()));
+                }
+            }
+            break;
         }
     }
 
@@ -264,9 +381,9 @@ void Window::update()
     ImGuiViewport *viewport = ImGui::GetMainViewport();
 
     ImVec2 dockPos = viewport->Pos;
-    dockPos.y += 55.0f;
+    dockPos.y += 75.0f;
     ImVec2 dockSize = viewport->Size;
-    dockSize.y -= 55.0f;
+    dockSize.y -= 100.0f; // 75.0f (ribbon) + 25.0f (status bar)
 
     static bool firstTime = true;
     ImGuiID dockspace_id = ImGui::GetID("MainDockSpace");
@@ -280,6 +397,8 @@ void Window::update()
                                   ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus |
                                   ImGuiWindowFlags_NoBackground;
 
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
     ImGui::Begin("MainDockHost", nullptr, host_flags);
     ImGui::DockSpace(dockspace_id, ImVec2(0.f, 0.f), ImGuiDockNodeFlags_None);
 
@@ -291,29 +410,55 @@ void Window::update()
         ImGui::DockBuilderAddNode(dockspace_id, ImGuiDockNodeFlags_DockSpace);
         ImGui::DockBuilderSetNodeSize(dockspace_id, dockSize);
 
-        ImGuiID dock_id_left, dock_id_right, dock_id_bottom, dock_id_bottomRight, dock_id_bottomLeft, dock_id_center = dockspace_id;
+        ImGuiID dock_id_left, dock_id_right, dock_id_bottom, dock_id_center = dockspace_id;
 
-        dock_id_bottom = ImGui::DockBuilderSplitNode(dock_id_center, ImGuiDir_Down, 0.25f, nullptr, &dock_id_center);
+        dock_id_bottom = ImGui::DockBuilderSplitNode(dock_id_center, ImGuiDir_Down, 0.30f, nullptr, &dock_id_center);
         dock_id_left = ImGui::DockBuilderSplitNode(dock_id_center, ImGuiDir_Left, 0.20f, nullptr, &dock_id_center);
-        dock_id_right = ImGui::DockBuilderSplitNode(dock_id_center, ImGuiDir_Right, 0.30f, nullptr, &dock_id_center);
-        dock_id_bottomRight = ImGui::DockBuilderSplitNode(dock_id_right, ImGuiDir_Down, 0.5f, nullptr, &dock_id_right);
-        dock_id_bottomLeft = ImGui::DockBuilderSplitNode(dock_id_left, ImGuiDir_Down, 0.5f, nullptr, &dock_id_left);
+        dock_id_right = ImGui::DockBuilderSplitNode(dock_id_center, ImGuiDir_Right, 0.25f, nullptr, &dock_id_center);
 
         ImGui::DockBuilderDockWindow("Viewport", dock_id_center);
         ImGui::DockBuilderDockWindow("###UniqueEditorID", dock_id_center);
-        ImGui::DockBuilderDockWindow("Explorer", dock_id_right);
-        ImGui::DockBuilderDockWindow("Output", dock_id_bottom);
-        ImGui::DockBuilderDockWindow("Properties", dock_id_bottomLeft);
-        ImGui::DockBuilderDockWindow("Heiarchy", dock_id_left);
+        ImGui::DockBuilderDockWindow("Scene", dock_id_left);
+        ImGui::DockBuilderDockWindow("Properties", dock_id_right);
+        ImGui::DockBuilderDockWindow("Assets", dock_id_bottom);
+        ImGui::DockBuilderDockWindow("Console", dock_id_bottom);
         ImGui::DockBuilderFinish(dockspace_id);
     }
     ImGui::End();
+    ImGui::PopStyleVar(2);
 
     if (m_luaEngine.isRunning)
         m_luaEngine.step();
 
     m_ribbon.renderRibbon();
     m_explorer.renderExplorer(m_viewport);
+
+    // Bottom Status Bar
+    {
+        ImGuiViewport* main_viewport = ImGui::GetMainViewport();
+        ImGui::SetNextWindowPos(ImVec2(main_viewport->Pos.x, main_viewport->Pos.y + main_viewport->Size.y - 25.0f));
+        ImGui::SetNextWindowSize(ImVec2(main_viewport->Size.x, 25.0f));
+        ImGuiWindowFlags status_flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
+                                        ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoFocusOnAppearing;
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10.0f, 4.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImGui::GetStyleColorVec4(ImGuiCol_MenuBarBg));
+        
+        ImGui::Begin("###StatusBar", nullptr, status_flags);
+        ImGui::Text("Flux Engine | Version 0.1.0");
+        if (!m_explorer.activeFolderPath.empty()) {
+            ImGui::SameLine();
+            ImGui::TextDisabled(" | Project: %s", m_explorer.activeFolderPath.filename().string().c_str());
+        }
+        ImGui::SameLine(main_viewport->Size.x - 30.0f);
+        if (ImGui::Button("?", ImVec2(20.0f, 17.0f))) {
+            Output::addLog("Flux Engine - Help: Use WASD + Mouse Right-Click to fly. Drag assets from the Assets panel into the scene to load them.");
+        }
+        ImGui::End();
+        
+        ImGui::PopStyleColor();
+        ImGui::PopStyleVar(2);
+    }
 
     static std::filesystem::path lastLoadedProject;
     if (m_explorer.activeFolderPath != lastLoadedProject && !m_explorer.activeFolderPath.empty())
@@ -322,28 +467,17 @@ void Window::update()
         m_ribbon.LoadProjectSettings(m_explorer.activeFolderPath);
     }
 
-    if (!m_explorer.activeFolderPath.empty())
-    {
-        if (m_ribbon.editorLocked)
-            ImGui::BeginDisabled(true);
+    m_viewport.activeProjectPath = m_explorer.activeFolderPath;
 
-        m_viewport.RenderViewport(m_heiarchy);
-        m_properties.renderProperties(&m_heiarchy);
-        m_heiarchy.renderHeiarchy(m_viewport.activeProjectPath);
+    if (m_ribbon.editorLocked)
+        ImGui::BeginDisabled(true);
 
-        if (m_ribbon.editorLocked)
-            ImGui::EndDisabled();
+    m_viewport.RenderViewport(m_heiarchy);
+    m_properties.renderProperties(&m_heiarchy);
+    m_heiarchy.renderHeiarchy(m_viewport.activeProjectPath);
 
-        ImGuiIO &io = ImGui::GetIO();
-    }
-    else
-    {
-        ImGui::Begin("Viewport");
-        ImGui::SetWindowFontScale(2.0f);
-        ImGui::Text("No project loaded. Please Open or Create a project in the Explorer.");
-        ImGui::SetWindowFontScale(1.0f);
-        ImGui::End();
-    }
+    if (m_ribbon.editorLocked)
+        ImGui::EndDisabled();
 
     if (m_ribbon.playToggledFrame)
     {
@@ -396,11 +530,20 @@ void Window::update()
         SDL_StopTextInput(m_window);
     }
 
-    if (!isTextEditorFocused && io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_S) && !m_ribbon.editorLocked)
+    if (!isTextEditorFocused && !m_ribbon.editorLocked)
     {
-        std::string scenePath = m_explorer.activeFolderPath.string() + "/scene.fscn";
-        m_sceneSerializer.Save(m_heiarchy, scenePath, m_explorer.activeFolderPath);
-        Output::addLog("Scene saved to " + scenePath);
+        if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_S))
+        {
+            m_ribbon.TriggerSaveScene();
+        }
+        else if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Z))
+        {
+            m_heiarchy.Undo();
+        }
+        else if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Y))
+        {
+            m_heiarchy.Redo();
+        }
     }
 
     ImGui::Render();
@@ -410,7 +553,8 @@ void Window::update()
     SDL_GL_MakeCurrent(m_window, m_glContext);
     SDL_GL_SwapWindow(m_window);
 
-    //m_runtime.SyncCamera(m_viewport.camera->Position, m_viewport.camera->Position + m_viewport.camera->Front);
+    if (m_runtime.isRunning && m_viewport.camera)
+        m_runtime.SyncCamera(m_viewport.camera->Position, m_viewport.camera->Position + m_viewport.camera->Front);
     m_runtime.Update();
 
     if (m_window && m_glContext)
@@ -447,6 +591,9 @@ void Window::StartRuntimeEngine()
         }
     }
 
+    std::filesystem::path backupPath = m_explorer.activeFolderPath/ ".flux" / "temp_runtime_backup.fscn";
+    SceneSerializer::Save(m_heiarchy, backupPath.string(), m_explorer.activeFolderPath);
+
     m_runtimeNodes = m_heiarchy.nodes;
     m_runtime.Start(projName, m_explorer.activeFolderPath, m_runtimeNodes, ps.runtimeWidth, ps.runtimeHeight);
 }
@@ -461,6 +608,17 @@ void Window::StopRuntimeEngine()
     m_ribbon.editorLocked = false;
     m_runtimeNodes.clear();
 
-    Output::addLog("Runtime stopped.");
+    SDL_GL_MakeCurrent(m_window, m_glContext);
+    std::filesystem::path backupPath = m_explorer.activeFolderPath/ ".flux" / "temp_runtime_backup.fscn";
+    if (std::filesystem::exists(backupPath))
+    {
+        SceneSerializer::Load(m_heiarchy, backupPath, m_explorer.activeFolderPath);
+        std::filesystem::remove(backupPath);
+    }
+    int w, h;
+    SDL_GetWindowSize(m_window, &w, &h);
+    glViewport(0, 0, w, h);
+
+    Output::addLog("Runtime stopped. Editor view restored.");
 }
 } // namespace Flux

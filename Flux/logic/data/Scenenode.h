@@ -1,100 +1,128 @@
 #pragma once
+#include "imgui.h"
+#include "ImGuizmo.h"
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include <memory>
 #include <string>
 #include <vector>
-#include <memory>
-#include "imgui.h"
-#include "ImGuizmo.h"
 
 #include <Jolt/Jolt.h>
 #include <Jolt/Physics/Body/Body.h>
 
-namespace Flux {
+namespace Flux
+{
 
-    class Model;
+class Model;
 
-    enum class NodeType {
-        Mesh,
-        DirectionalLight,
-        PointLight,
-        SpotLight,
-        SurfaceLight,
-        Camera
-    };
+enum class NodeType
+{
+    Mesh,
+    DirectionalLight,
+    PointLight,
+    SpotLight,
+    SurfaceLight,
+    Camera,
+    Folder,
+    Empty
+};
 
-    struct LightData {
-        glm::vec3 color       = glm::vec3(1.0f);
-        float     intensity   = 1.0f;
+struct LightData
+{
+    glm::vec3 color = glm::vec3(1.0f);
+    float intensity = 1.0f;
 
-        float range           = 10.0f;
-        float innerCutoff     = 12.5f;
-        float outerCutoff     = 17.5f;
+    float range = 10.0f;
+    float innerCutoff = 12.5f;
+    float outerCutoff = 17.5f;
 
-        glm::vec3 direction   = glm::vec3(0.0f, -1.0f, 0.0f);
+    glm::vec3 direction = glm::vec3(0.0f, -1.0f, 0.0f);
 
-        float areaWidth       = 1.0f;
-        float areaHeight      = 1.0f;
+    float areaWidth = 1.0f;
+    float areaHeight = 1.0f;
 
-        float timeOfDay       = 14.0f;
-        float brightness      = 2.0f;
-        float ambientDaytime  = 0.3f;
-        float ambientNight    = 0.1f;
-        glm::vec3 fogColor    = glm::vec3(0.75f, 0.84f, 1.0f);
-        float fogStart        = 0.0f;
-        float fogEnd          = 300.0f;
-        glm::vec3 colorShift  = glm::vec3(1.0f);
+    float timeOfDay = 14.0f;
+    float brightness = 2.0f;
+    float ambientDaytime = 0.3f;
+    float ambientNight = 0.1f;
+    glm::vec3 fogColor = glm::vec3(0.75f, 0.84f, 1.0f);
+    float fogStart = 0.0f;
+    float fogEnd = 300.0f;
+    glm::vec3 colorShift = glm::vec3(1.0f);
 
-        glm::vec3 moonColor     = glm::vec3(0.55f, 0.65f, 0.85f);
-        float     moonIntensity = 0.18f;
-    };
+    glm::vec3 moonColor = glm::vec3(0.55f, 0.65f, 0.85f);
+    float moonIntensity = 0.18f;
+};
 
-    struct SceneNode {
-        std::string            name;
-        NodeType               type        = NodeType::Mesh;
-        std::shared_ptr<Model> model;
-        std::string            texturePath;
-        unsigned int           textureID   = 0;
+struct SceneNode
+{
+    std::string name;
+    NodeType type = NodeType::Mesh;
+    std::shared_ptr<Model> model;
+    std::string texturePath;
+    unsigned int textureID = 0;
 
-        glm::vec3 position = glm::vec3(0.0f);
-        glm::vec3 rotation = glm::vec3(0.0f);
-        glm::vec3 scale    = glm::vec3(1.0f);
+    glm::vec3 position = glm::vec3(0.0f);
+    glm::vec3 rotation = glm::vec3(0.0f);
+    glm::vec3 scale = glm::vec3(1.0f);
 
-        float roughness = 0.7f;
-        float metallic  = 0.0f;
-        glm::vec3 baseColor = glm::vec3(0.8f, 0.8f, 0.8f);
+    float roughness = 0.7f;
+    float metallic = 0.0f;
+    glm::vec3 baseColor = glm::vec3(-1.f);
+    glm::vec2 textureScale = glm::vec2(1.0f, 1.0f);
+    bool pixelated = false;
 
-        int              parentIndex = -1;
-        std::vector<int> children;
+    bool isIndependent = false;
+    int parentIndex = -1;
+    std::vector<int> children;
 
-        LightData light;
+    LightData light;
 
-        bool isLightingNode = false;
-        bool isMainCamera = false;
-        bool isLocked = false;
+    bool isLightingNode = false;
+    bool isMainCamera = false;
+    bool isLocked = false;
 
-        float fov = 70.0f;
+    float fov = 70.0f;
 
-        bool hasPhysicsTransform = false; // switch between physics simulation and editor render
+    bool hasPhysicsTransform = false;
 
-        glm::mat4 GetTransformMatrix() const {
-            if (hasPhysicsTransform)
-                return physicsWorldMatrix;
+    glm::mat4 GetLocalTransform() const
+    {
+        if (hasPhysicsTransform)
+            return physicsWorldMatrix;
 
-            float m[16];
-            float t[3] = { position.x, position.y, position.z };
-            float r[3] = { rotation.x, rotation.y, rotation.z };
-            float s[3] = { scale.x,    scale.y,    scale.z    };
-            ImGuizmo::RecomposeMatrixFromComponents(t, r, s, m);
-            return glm::make_mat4(m);
+        float m[16];
+        float t[3] = {position.x, position.y, position.z};
+        float r[3] = {rotation.x, rotation.y, rotation.z};
+        float s[3] = {scale.x, scale.y, scale.z};
+        ImGuizmo::RecomposeMatrixFromComponents(t, r, s, m);
+        return glm::make_mat4(m);
+    }
+
+    glm::mat4 GetWorldTransform(const std::vector<SceneNode> &allNodes) const
+    {
+        glm::mat4 local = GetLocalTransform();
+
+        if (parentIndex != -1 && parentIndex < allNodes.size())
+        {
+            const SceneNode &parent = allNodes[parentIndex];
+
+            if (parent.type != NodeType::Folder && !isIndependent)
+            {
+                return parent.GetWorldTransform(allNodes) * local;
+            }
         }
+        return local;
+    }
 
-        glm::vec3 velocity = glm::vec3(0.0f);
-        bool isAnchored = false;
+    glm::vec3 velocity = glm::vec3(0.0f);
+    bool isAnchored = false;
 
-        JPH::BodyID physicsBodyID;
-        glm::mat4 physicsWorldMatrix = glm::mat4(1.0f);
-    };
+    JPH::BodyID physicsBodyID;
+    glm::mat4 physicsWorldMatrix = glm::mat4(1.0f);
 
-}
+    bool hasUserBaseColor = false;
+};
+
+} // namespace Flux

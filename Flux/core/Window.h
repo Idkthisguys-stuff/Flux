@@ -23,6 +23,7 @@
 #include "logic/SplashScreen.h"
 #include "logic/runtime.h"
 #include "core/SceneSerializer.h"
+#include "render/3D/OpenGL/OpenGLManager.h"
 
 #include <dwmapi.h>
 
@@ -52,7 +53,7 @@ namespace Flux {
         std::string m_title;
 
         Viewport   m_viewport;
-        Explorer   m_explorer;
+        Assets     m_explorer;
         Ribbon     m_ribbon;
         Output     m_output;
         Properties m_properties;
@@ -60,6 +61,7 @@ namespace Flux {
         TextEditor m_texteditor;
         LuaEngine  m_luaEngine;
         Runtime    m_runtime;
+        OpenGLManager glManager;
 
         SceneSerializer m_sceneSerializer;
 
