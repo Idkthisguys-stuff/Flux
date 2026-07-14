@@ -365,3 +365,6 @@ FodyWeavers.xsd
 CMakeLists.txt
 .idea/
 Flux/assets/fonts
+CppProperties.json
+out/
+*.lnk
