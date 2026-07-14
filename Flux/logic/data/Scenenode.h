@@ -7,6 +7,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <variant>
 
 #include <Jolt/Jolt.h>
 #include <Jolt/Physics/Body/Body.h>
@@ -55,10 +56,45 @@ struct LightData
     float moonIntensity = 0.18f;
 };
 
+// ##### COMPONENTS #####
+
+struct TransformComponent {
+    glm::vec3 position;
+    glm::vec3 rotation;
+    glm::vec3 scale;
+};
+
+struct CameraComponent {
+    float fov;
+    bool isMainCamera;
+};
+
+struct MeshComponent {
+    std::string modelPath;
+    float roughness;
+    float metallic;
+};
+
+struct PhysicsComponent {
+    glm::vec3 velocity;
+    bool isAnchored;
+};
+
+// #######################
+
+struct Component {
+    std::string name;
+    std::variant<TransformComponent,
+                CameraComponent,
+                MeshComponent,
+                PhysicsComponent> data;
+};
+
 struct SceneNode
 {
     std::string name;
     NodeType type = NodeType::Mesh;
+    std::vector<Component> components;
     std::shared_ptr<Model> model;
     std::string texturePath;
     unsigned int textureID = 0;
@@ -114,6 +150,17 @@ struct SceneNode
             }
         }
         return local;
+    }
+
+    template<typename T>
+    bool hasComponent() const {
+        for (const Component& comp : components) {
+            if (std::holds_alternative<T>(comp.data)) {
+                return true;
+            }
+        }
+        
+        return false;
     }
 
     glm::vec3 velocity = glm::vec3(0.0f);

@@ -325,7 +325,7 @@ void Runtime::Update()
 
     for (auto &node : m_gameNodes)
     {
-        if (node.type == NodeType::Camera && node.isMainCamera)
+        if (node.hasComponent<CameraComponent>() && node.isMainCamera)
         {
             glm::mat4 transform = node.GetWorldTransform(m_gameNodes);
             glm::vec3 camPos = node.position;
@@ -345,7 +345,7 @@ void Runtime::Update()
     {
         for (auto &node : m_gameNodes)
         {
-            if (node.type == NodeType::Camera)
+            if (node.hasComponent<CameraComponent>())
             {
                 glm::mat4 transform = node.GetWorldTransform(m_gameNodes);
                 glm::vec3 camPos = node.position;

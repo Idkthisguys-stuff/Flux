@@ -15,10 +15,21 @@
 namespace Flux
 {
 
-static const char *NodeTypeLabel(NodeType t)
+static const char *GetNodeVisualLabel(const SceneNode &node)
 {
-    switch (t)
+    if (node.isLightingNode)
+        return "[Dir]  ";
+        
+    if (node.hasComponent<CameraComponent>())
+        return "[Cam]  ";
+        
+    if (node.hasComponent<MeshComponent>())
+        return "[Mesh] ";
+
+    switch (node.type)
     {
+    case NodeType::Folder:
+        return "[Folder]";
     case NodeType::DirectionalLight:
         return "[Dir]  ";
     case NodeType::PointLight:
@@ -27,12 +38,8 @@ static const char *NodeTypeLabel(NodeType t)
         return "[Spot] ";
     case NodeType::SurfaceLight:
         return "[Surf] ";
-    case NodeType::Folder:
-        return "[Folder]";
-    case NodeType::Empty:
-        return "[Empty]";
     default:
-        return "[Mesh] ";
+        return "[Empty] ";
     }
 }
 
@@ -360,6 +367,7 @@ void Heiarchy::AddModel(const std::string &path, const std::string &name)
     n.model = GetOrLoadModel(path);
     std::string desired = name.empty() ? std::filesystem::path(path).stem().string() : name;
     n.name = GetUniqueName(desired);
+    n.components.push_back({"Mesh Renderer", MeshComponent{"", 0.7f, 0.0f}});
     nodes.push_back(n);
     selectedIndices.clear();
     selectedIndices.push_back((int)nodes.size() - 1);
@@ -408,6 +416,8 @@ void Heiarchy::AddCamera(const std::string &name)
     SceneNode n;
     n.type = NodeType::Camera;
     n.name = GetUniqueName(name.empty() ? "Camera" : name);
+
+    n.components.push_back({"Camera Settings", CameraComponent{70.0f, false}});
 
     bool hasMain = false;
     for (auto &node : nodes)
@@ -479,7 +489,7 @@ void Heiarchy::DrawNode(int index)
     }
 
     bool selected = isSelected(index);
-    std::string label = std::string(NodeTypeLabel(node.type)) + node.name + uid;
+    std::string label = std::string(GetNodeVisualLabel(node)) + node.name + uid;
 
     if (node.isLightingNode)
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.85f, 0.35f, 1.0f));

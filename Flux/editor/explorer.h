@@ -84,6 +84,8 @@ class Assets
     bool isEditorVisible = false;
     bool isEditorUnsaved = false;
 
+    bool showTreeSidebar = true;
+
   private:
     void DrawVirtualNodes(virtualFile &file);
     void DrawFolderTree(virtualFile &file);

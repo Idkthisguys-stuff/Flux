@@ -36,26 +36,92 @@ void LuaEngine::bindEngineAPI()
         "isLocked", &SceneNode::isLocked, "fov", &SceneNode::fov, "isMainCamera", &SceneNode::isMainCamera,
 
         "isIndependent", &SceneNode::isIndependent,
-    
-        "getWorldPosition", [this](SceneNode& n) -> glm::vec3 {
+
+        "getWorldPosition",
+        [this](SceneNode &n) -> glm::vec3 {
             glm::mat4 w = n.GetWorldTransform(*activeNodes);
             return glm::vec3(w[3]); // 4th column is position
         },
-        
-        "getParent", [this](SceneNode& n) -> SceneNode* {
-            if (n.parentIndex != -1 && n.parentIndex < activeNodes->size()) {
+
+        "parent",
+        sol::property(
+            [this](SceneNode &n) -> SceneNode * {
+                if (n.parentIndex != -1 && n.parentIndex < activeNodes->size())
+                {
+                    return &(*activeNodes)[n.parentIndex];
+                }
+                return nullptr;
+            },
+            [this](SceneNode &child, SceneNode *newParent) {
+                if (!newParent)
+                {
+                    child.parentIndex = -1; // Unparent
+                    return;
+                }
+                auto it = std::find_if(activeNodes->begin(), activeNodes->end(),
+                                       [&](const SceneNode &node) { return &node == newParent; });
+                if (it != activeNodes->end())
+                {
+                    child.parentIndex = std::distance(activeNodes->begin(), it);
+                }
+            }),
+
+        "getChildren",
+        [this](SceneNode &n) -> sol::table {
+            sol::table childrenTable = lua.create_table();
+
+            int currentIndex = -1;
+            for (size_t i = 0; i < activeNodes->size(); i++)
+            {
+                if (&(*activeNodes)[i] == &n)
+                {
+                    currentIndex = (int)i;
+                    break;
+                }
+            }
+
+            int tIndex = 1;
+            for (auto &node : *activeNodes)
+            {
+                if (node.parentIndex == currentIndex)
+                {
+                    childrenTable[tIndex++] = &node;
+                }
+            }
+            return childrenTable;
+        },
+
+        "getAncestors",
+        [this](SceneNode &n) -> sol::table {
+            sol::table ancestorTable = lua.create_table();
+            int tIndex = 1;
+            int currentParent = n.parentIndex;
+
+            while (currentParent != -1 && currentParent < activeNodes->size())
+            {
+                ancestorTable[tIndex++] = &(*activeNodes)[currentParent];
+                currentParent = (*activeNodes)[currentParent].parentIndex;
+            }
+            return ancestorTable;
+        },
+
+        "getParent",
+        [this](SceneNode &n) -> SceneNode * {
+            if (n.parentIndex != -1 && n.parentIndex < activeNodes->size())
+            {
                 return &(*activeNodes)[n.parentIndex];
             }
             return nullptr;
         },
-        "setParent", [this](SceneNode& child, SceneNode& newParent) {
-            auto it = std::find_if(activeNodes->begin(), activeNodes->end(), 
-                [&](const SceneNode& node) { return &node == &newParent; });
-            if (it != activeNodes->end()) {
+        "setParent",
+        [this](SceneNode &child, SceneNode &newParent) {
+            auto it = std::find_if(activeNodes->begin(), activeNodes->end(),
+                                   [&](const SceneNode &node) { return &node == &newParent; });
+            if (it != activeNodes->end())
+            {
                 child.parentIndex = std::distance(activeNodes->begin(), it);
             }
-        }
-    );
+        });
 
     sol::table engineTable = lua.create_table();
 

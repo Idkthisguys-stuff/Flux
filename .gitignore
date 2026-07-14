@@ -367,3 +367,4 @@ CMakeLists.txt
 Flux/assets/fonts
 CppProperties.json
 out/
+*.lnk

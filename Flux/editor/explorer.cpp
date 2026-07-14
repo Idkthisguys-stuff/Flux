@@ -5,8 +5,8 @@
 #include <iostream>
 
 #ifdef _WIN32
-    #include <windows.h>
-    #include <shellapi.h>
+#include <shellapi.h>
+#include <windows.h>
 #endif
 
 namespace Flux
@@ -24,20 +24,21 @@ std::filesystem::path Assets::resolveUniqueName(const std::filesystem::path &par
     return candidate;
 }
 
-void Assets::openInNativeExplorer(const std::filesystem::path& path) {
-    #ifdef _WIN32
-        std::wstring parameters = L"";
-        
-        if (!std::filesystem::is_directory(path))
-        {
-            parameters = L"/select,\"" + path.wstring() + L"\"";
-            ShellExecuteW(NULL, L"open", L"explorer.exe", parameters.c_str(), NULL, SW_SHOWNORMAL);
-        }
-        else
-        {
-            ShellExecuteW(NULL, L"open", path.c_str(), NULL, NULL, SW_SHOWNORMAL);
-        }
-    #endif
+void Assets::openInNativeExplorer(const std::filesystem::path &path)
+{
+#ifdef _WIN32
+    std::wstring parameters = L"";
+
+    if (!std::filesystem::is_directory(path))
+    {
+        parameters = L"/select,\"" + path.wstring() + L"\"";
+        ShellExecuteW(NULL, L"open", L"explorer.exe", parameters.c_str(), NULL, SW_SHOWNORMAL);
+    }
+    else
+    {
+        ShellExecuteW(NULL, L"open", path.c_str(), NULL, NULL, SW_SHOWNORMAL);
+    }
+#endif
 }
 
 void Assets::DrawAssetIcon(ImDrawList *drawList, ImVec2 pos, ImVec2 size, fileType type, unsigned int texID)
@@ -325,20 +326,30 @@ void Assets::renderExplorer(Viewport &viewport)
                 float itemHeight = 100.f;
                 float spacing = 16.f;
                 float panelWidth = ImGui::GetContentRegionAvail().x;
-                int columns = std::max(1, (int)(panelWidth / (itemWidth + spacing)));
+                bool useCompactListView = (panelWidth < 300.f);
+                int columns = useCompactListView ? 1 : std::max(1, (int)(panelWidth / (itemWidth + spacing)));
 
                 if (ImGui::BeginTable("##gridTable", columns, ImGuiTableFlags_NoSavedSettings))
                 {
-                    for (int i = 0; i < columns; i++)
+                    if (useCompactListView)
                     {
-                        ImGui::TableSetupColumn("##col", ImGuiTableColumnFlags_WidthFixed, itemWidth + spacing);
+                        ImGui::TableSetupColumn("##col", ImGuiTableColumnFlags_WidthStretch);
+                    }
+                    else
+                    {
+                        for (int i = 0; i < columns; i++)
+                        {
+                            ImGui::TableSetupColumn("##col", ImGuiTableColumnFlags_WidthFixed, itemWidth + spacing);
+                        }
                     }
 
-                    if (currentFolderNode && !currentFolderNode->children.empty()) {
+                    if (currentFolderNode && !currentFolderNode->children.empty())
+                    {
                         for (size_t i = 0; i < currentFolderNode->children.size(); ++i)
                         {
-                            if (i >= currentFolderNode->children.size()) break;
-            
+                            if (i >= currentFolderNode->children.size())
+                                break;
+
                             virtualFile &child = currentFolderNode->children[i];
 
                             if (child.name == ".flux" && child.type == fileType::Folder)
@@ -347,16 +358,20 @@ void Assets::renderExplorer(Viewport &viewport)
                             ImGui::TableNextColumn();
                             ImGui::PushID(child.name.c_str());
 
-                            ImVec2 cardSize(itemWidth, itemHeight);
+                            ImVec2 cardSize =
+                                useCompactListView ? ImVec2(panelWidth, 24.f) : ImVec2(itemWidth, itemHeight);
                             ImVec2 startPos = ImGui::GetCursorScreenPos();
+                            ImVec2 rectMax = useCompactListView ? ImVec2(startPos.x + panelWidth, startPos.y + 24.f)
+                                                                : ImVec2(startPos.x + itemWidth,
+                                                                         startPos.y + itemHeight); // rectmaxxing :)
 
                             if (renamingNode == &child)
                             {
                                 ImGui::SetNextItemWidth(itemWidth);
                                 ImGui::SetKeyboardFocusHere();
                                 bool commit = ImGui::InputText("##inlineRename", renameBuffer, sizeof(renameBuffer),
-                                                            ImGuiInputTextFlags_EnterReturnsTrue |
-                                                                ImGuiInputTextFlags_AutoSelectAll);
+                                                               ImGuiInputTextFlags_EnterReturnsTrue |
+                                                                   ImGuiInputTextFlags_AutoSelectAll);
                                 bool cancelled = ImGui::IsItemDeactivated() && !ImGui::IsItemActivated();
                                 if (commit && renameBuffer[0] != '\0')
                                 {
@@ -400,12 +415,11 @@ void Assets::renderExplorer(Viewport &viewport)
 
                                 ImDrawList *drawList = ImGui::GetWindowDrawList();
                                 ImVec2 rectMin = startPos;
-                                ImVec2 rectMax = ImVec2(startPos.x + itemWidth, startPos.y + itemHeight);
 
                                 ImVec2 mousePos = ImGui::GetIO().MousePos;
                                 bool isHovered = (mousePos.x >= rectMin.x && mousePos.x <= rectMax.x &&
-                                                mousePos.y >= rectMin.y && mousePos.y <= rectMax.y) &&
-                                                ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows);
+                                                  mousePos.y >= rectMin.y && mousePos.y <= rectMax.y) &&
+                                                 ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows);
 
                                 if (isSelected)
                                 {
@@ -419,44 +433,60 @@ void Assets::renderExplorer(Viewport &viewport)
 
                                 ImGui::BeginGroup();
 
-                                // 1. Draw Icon
-                                ImVec2 iconPos = ImGui::GetCursorScreenPos();
-                                float iconSize = 48.f;
-                                iconPos.x += (itemWidth - iconSize) * 0.5f;
-
-                                ImGui::Dummy(ImVec2(itemWidth, iconSize));
-
-                                unsigned int texID = 0;
-                                if (child.type == fileType::Texture)
+                                if (useCompactListView)
                                 {
-                                    texID = TextureLoader::Load(child.path.string());
-                                }
-                                DrawAssetIcon(drawList, iconPos, ImVec2(iconSize, iconSize), child.type, texID);
+                                    ImVec2 iconPos = ImGui::GetCursorScreenPos();
+                                    iconPos.x += 4.f;
+                                    iconPos.y += 2.f;
+                                    ImGui::Dummy(ImVec2(20.f, 20.f));
 
-                                // 2. Draw Label below icon
-                                ImGui::Spacing();
-                                std::string dispName = child.name;
-                                bool hasBackup = std::find(filesWithBackups.begin(), filesWithBackups.end(), child.path) !=
-                                                filesWithBackups.end();
-                                bool isCurrentlyOpen = (activeFilePath == child.path);
-                                if (isCurrentlyOpen && textEditor != nullptr && textEditor->IsTextChanged())
-                                {
-                                    isEditorUnsaved = true;
-                                }
-                                if ((isCurrentlyOpen && isEditorUnsaved) || hasBackup)
-                                {
-                                    dispName += " *";
-                                }
+                                    DrawAssetIcon(drawList, iconPos, ImVec2(16.f, 16.f), child.type, 0);
 
-                                std::string truncatedName = dispName;
-                                if (truncatedName.size() > 11)
-                                {
-                                    truncatedName = truncatedName.substr(0, 9) + "..";
+                                    ImGui::SameLine();
+                                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 2.f);
+                                    ImGui::TextUnformatted(child.name.c_str());
                                 }
+                                else
+                                {
+                                    // 1. Draw Icon
+                                    ImVec2 iconPos = ImGui::GetCursorScreenPos();
+                                    float iconSize = 48.f;
+                                    iconPos.x += (itemWidth - iconSize) * 0.5f;
 
-                                float textW = ImGui::CalcTextSize(truncatedName.c_str()).x;
-                                ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (itemWidth - textW) * 0.5f);
-                                ImGui::TextUnformatted(truncatedName.c_str());
+                                    ImGui::Dummy(ImVec2(itemWidth, iconSize));
+
+                                    unsigned int texID = 0;
+                                    if (child.type == fileType::Texture)
+                                    {
+                                        texID = TextureLoader::Load(child.path.string());
+                                    }
+                                    DrawAssetIcon(drawList, iconPos, ImVec2(iconSize, iconSize), child.type, texID);
+
+                                    // 2. Draw Label below icon
+                                    ImGui::Spacing();
+                                    std::string dispName = child.name;
+                                    bool hasBackup = std::find(filesWithBackups.begin(), filesWithBackups.end(),
+                                                               child.path) != filesWithBackups.end();
+                                    bool isCurrentlyOpen = (activeFilePath == child.path);
+                                    if (isCurrentlyOpen && textEditor != nullptr && textEditor->IsTextChanged())
+                                    {
+                                        isEditorUnsaved = true;
+                                    }
+                                    if ((isCurrentlyOpen && isEditorUnsaved) || hasBackup)
+                                    {
+                                        dispName += " *";
+                                    }
+
+                                    std::string truncatedName = dispName;
+                                    if (truncatedName.size() > 11)
+                                    {
+                                        truncatedName = truncatedName.substr(0, 9) + "..";
+                                    }
+
+                                    float textW = ImGui::CalcTextSize(truncatedName.c_str()).x;
+                                    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (itemWidth - textW) * 0.5f);
+                                    ImGui::TextUnformatted(truncatedName.c_str());
+                                }
 
                                 ImGui::EndGroup();
 
@@ -494,7 +524,8 @@ void Assets::renderExplorer(Viewport &viewport)
                                     {
                                         if (ribbonPtr && ribbonPtr->heiarchyPtr)
                                         {
-                                            SceneSerializer::Load(*ribbonPtr->heiarchyPtr, child.path, projectRoot.path);
+                                            SceneSerializer::Load(*ribbonPtr->heiarchyPtr, child.path,
+                                                                  projectRoot.path);
                                             Output::addLog("Opened scene: " + child.name);
                                         }
                                     }
@@ -507,9 +538,10 @@ void Assets::renderExplorer(Viewport &viewport)
                                     if (child.type == fileType::Model)
                                     {
                                         ImGui::SetDragDropPayload("MODEL_FILE", payloadPath.c_str(),
-                                                                payloadPath.size() + 1);
+                                                                  payloadPath.size() + 1);
                                     }
-                                    ImGui::SetDragDropPayload("EXPLORER_FILE", payloadPath.c_str(), payloadPath.size() + 1);
+                                    ImGui::SetDragDropPayload("EXPLORER_FILE", payloadPath.c_str(),
+                                                              payloadPath.size() + 1);
                                     ImGui::Text("Moving %s", child.name.c_str());
                                     ImGui::EndDragDropSource();
                                 }
@@ -542,7 +574,8 @@ void Assets::renderExplorer(Viewport &viewport)
                                 {
                                     selectedAssetPath = child.path;
 
-                                    if (ImGui::MenuItem("Show in File Explorer")) {
+                                    if (ImGui::MenuItem("Show in File Explorer"))
+                                    {
                                         openInNativeExplorer(child.path);
                                     }
 
@@ -595,7 +628,8 @@ void Assets::renderExplorer(Viewport &viewport)
             if (ImGui::BeginPopupContextWindow("##emptyGridArea",
                                                ImGuiPopupFlags_MouseButtonRight | ImGuiPopupFlags_NoOpenOverItems))
             {
-                if (ImGui::MenuItem("Show Current Folder in Explore")) {
+                if (ImGui::MenuItem("Show Current Folder in Explore"))
+                {
                     openInNativeExplorer(activeFolderPath);
                 }
 
@@ -979,7 +1013,7 @@ void Assets::TriggerOpenProject()
         projectRoot.path = selectedPath;
         projectRoot.name = selectedPath.filename().string();
 
-        selectedAssetPath = ""; 
+        selectedAssetPath = "";
         renamingNode = nullptr;
 
         syncFiles(selectedPath, projectRoot);

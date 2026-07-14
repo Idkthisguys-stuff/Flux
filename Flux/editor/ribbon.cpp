@@ -145,10 +145,6 @@ void Ribbon::renderRibbon()
             showBugReportModal = true;
         }
 
-        ImGui::Separator();
-
-        drawTransformTools();
-
         ImGui::EndMenuBar();
     }
 
@@ -228,6 +224,10 @@ void Ribbon::renderRibbon()
         }
         ImGui::End();
     }
+
+    drawTransformTools();
+
+    ImGui::SameLine();
 
     ImGui::SetCursorPosX(main_viewport->Size.x * 0.5f - 50.0f);
     drawProjectControls();

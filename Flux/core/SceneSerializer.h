@@ -10,12 +10,86 @@
 
 #include "core/pathHelper.h"
 
+#include "logic/data/Scenenode.h"
+
 using json = nlohmann::json;
+
+namespace glm
+{
+inline void to_json(nlohmann::json &j, const vec3 &v)
+{
+    j = {v.x, v.y, v.z};
+}
+inline void from_json(const nlohmann::json &j, vec3 &v)
+{
+    v.x = j[0];
+    v.y = j[1];
+    v.z = j[2];
+}
+} // namespace glm
 
 namespace Flux
 {
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(TransformComponent, position, rotation, scale)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(CameraComponent, fov, isMainCamera)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(MeshComponent, modelPath, roughness, metallic)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(PhysicsComponent, velocity, isAnchored)
+
+inline void to_json(nlohmann::json &j, const Component &c)
+{
+    j["name"] = c.name;
+    std::visit(
+        [&](auto &&arg) {
+            using T = std::decay_t<decltype(arg)>;
+            if constexpr (std::is_same_v<T, TransformComponent>)
+            {
+                j["type"] = "Transform";
+                j["data"] = arg;
+            }
+            else if constexpr (std::is_same_v<T, CameraComponent>)
+            {
+                j["type"] = "Camera";
+                j["data"] = arg;
+            }
+            else if constexpr (std::is_same_v<T, MeshComponent>)
+            {
+                j["type"] = "Mesh";
+                j["data"] = arg;
+            }
+            else if constexpr (std::is_same_v<T, PhysicsComponent>)
+            {
+                j["type"] = "Physics";
+                j["data"] = arg;
+            }
+        },
+        c.data);
+}
+
+inline void from_json(const nlohmann::json &j, Component &c)
+{
+    c.name = j.value("name", "Unknown");
+    std::string type = j.value("type", "");
+    if (type == "Transform")
+    {
+        c.data = j["data"].get<TransformComponent>();
+    }
+    else if (type == "Camera")
+    {
+        c.data = j["data"].get<CameraComponent>();
+    }
+    else if (type == "Mesh")
+    {
+        c.data = j["data"].get<MeshComponent>();
+    }
+    else if (type == "Physics")
+    {
+        c.data = j["data"].get<PhysicsComponent>();
+    }
+}
+
 class SceneSerializer
 {
+
   public:
     static void Save(const Heiarchy &heiarchy, const std::string &filePath, const std::filesystem::path &projectRoot)
     {
@@ -97,6 +171,8 @@ class SceneSerializer
 
             n["parentIndex"] = node.parentIndex;
             n["isIndependent"] = node.isIndependent;
+
+            n["Components"] = node.components;
 
             j["nodes"].push_back(n);
         }
@@ -259,6 +335,8 @@ class SceneSerializer
 
             n.parentIndex = jNode.value("parentIndex", -1);
             n.isIndependent = jNode.value("isIndependent", false);
+
+            n.components = jNode.value("Components", std::vector<Component>{});
 
             h.nodes.push_back(n);
         }

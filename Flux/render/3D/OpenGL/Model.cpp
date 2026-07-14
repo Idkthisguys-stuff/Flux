@@ -17,7 +17,7 @@ static bool HasRealAlpha(const unsigned char *data, int w, int h)
 
 static unsigned int LoadMaterialTextures(aiMaterial *mat, aiTextureType type, const aiScene *scene,
                                          const std::string &modelPath, const std::filesystem::path &modelDir,
-                                         bool &outHasAlpha)
+                                         bool &outHasAlpha, std::string &outPath)
 {
     aiString texPath;
     if (mat->GetTexture(type, 0, &texPath) != AI_SUCCESS)
@@ -30,17 +30,19 @@ static unsigned int LoadMaterialTextures(aiMaterial *mat, aiTextureType type, co
     const aiTexture *aitex = scene->GetEmbeddedTexture(rawPath.c_str());
     if (aitex)
     {
+        outPath = "[Embedded] " + std::filesystem::path(rawPath).filename().string();
+
         std::string cacheKey = modelPath + "#" + rawPath;
 
         if (aitex->mHeight == 0)
         {
             return TextureLoader::LoadFromMemory(cacheKey, reinterpret_cast<const unsigned char *>(aitex->pcData),
-                                                  (size_t)aitex->mWidth, &outHasAlpha);
+                                                 (size_t)aitex->mWidth, &outHasAlpha);
         }
         else
         {
             return TextureLoader::LoadFromMemoryRaw(cacheKey, reinterpret_cast<const unsigned char *>(aitex->pcData),
-                                                     (int)aitex->mWidth, (int)aitex->mHeight, GL_BGRA);
+                                                    (int)aitex->mWidth, (int)aitex->mHeight, GL_BGRA);
         }
     }
     else
@@ -57,8 +59,7 @@ static unsigned int LoadMaterialTextures(aiMaterial *mat, aiTextureType type, co
 
             if (!std::filesystem::exists(texStr))
             {
-                std::filesystem::path fbmDir =
-                    modelDir / (std::filesystem::path(modelPath).stem().string() + ".fbm");
+                std::filesystem::path fbmDir = modelDir / (std::filesystem::path(modelPath).stem().string() + ".fbm");
                 std::filesystem::path fbmPath = fbmDir / justName;
                 if (std::filesystem::exists(fbmPath))
                 {
@@ -67,6 +68,8 @@ static unsigned int LoadMaterialTextures(aiMaterial *mat, aiTextureType type, co
                 }
             }
         }
+
+        outPath = texStr;
 
         unsigned int id = TextureLoader::Load(texStr);
 
@@ -192,28 +195,32 @@ void Model::Load()
             bool dummyAlpha = false;
 
             myMesh.material.baseColor = myMesh.matColor;
+            
+            myMesh.textureID = LoadMaterialTextures(mat, aiTextureType_DIFFUSE, scene, path, modelDir, myMesh.hasAlpha,
+                                                    myMesh.material.albedoPath);
 
-            myMesh.textureID = LoadMaterialTextures(mat, aiTextureType_DIFFUSE, scene, path, modelDir, myMesh.hasAlpha);
-
-            myMesh.material.normalMap = LoadMaterialTextures(mat, aiTextureType_NORMALS, scene, path, modelDir, dummyAlpha);
+            myMesh.material.normalMap = LoadMaterialTextures(mat, aiTextureType_NORMALS, scene, path, modelDir,
+                                                             dummyAlpha, myMesh.material.normalPath);
             if (myMesh.material.normalMap == 0)
             {
-                myMesh.material.normalMap =
-                    LoadMaterialTextures(mat, aiTextureType_HEIGHT, scene, path, modelDir, dummyAlpha);
+                myMesh.material.normalMap = LoadMaterialTextures(mat, aiTextureType_HEIGHT, scene, path, modelDir,
+                                                                 dummyAlpha, myMesh.material.normalPath);
             }
-            myMesh.material.metallicMap =
-                LoadMaterialTextures(mat, aiTextureType_METALNESS, scene, path, modelDir, dummyAlpha);
-            myMesh.material.roughnessMap =
-                LoadMaterialTextures(mat, aiTextureType_DIFFUSE_ROUGHNESS, scene, path, modelDir, dummyAlpha);
+            myMesh.material.metallicMap = LoadMaterialTextures(mat, aiTextureType_METALNESS, scene, path, modelDir,
+                                                               dummyAlpha, myMesh.material.metallicPath);
+            myMesh.material.roughnessMap = LoadMaterialTextures(mat, aiTextureType_DIFFUSE_ROUGHNESS, scene, path,
+                                                                modelDir, dummyAlpha, myMesh.material.roughnessPath);
             if (myMesh.material.roughnessMap == 0)
             {
-                myMesh.material.roughnessMap =
-                    LoadMaterialTextures(mat, aiTextureType_SHININESS, scene, path, modelDir, dummyAlpha);
+                myMesh.material.roughnessMap = LoadMaterialTextures(mat, aiTextureType_SHININESS, scene, path, modelDir,
+                                                                    dummyAlpha, myMesh.material.roughnessPath);
             }
-            myMesh.material.aoMap = LoadMaterialTextures(mat, aiTextureType_AMBIENT, scene, path, modelDir, dummyAlpha);
+            myMesh.material.aoMap = LoadMaterialTextures(mat, aiTextureType_AMBIENT, scene, path, modelDir, dummyAlpha,
+                                                         myMesh.material.aoPath);
             /*myMesh.material.dispMap =
                 LoadMaterialTextures(mat, aiTextureType_DISPLACEMENT, scene, path, modelDir, dummyAlpha);
-            myMesh.material.alphaMap = LoadMaterialTextures(mat, aiTextureType_OPACITY, scene, path, modelDir, dummyAlpha);*/
+            myMesh.material.alphaMap = LoadMaterialTextures(mat, aiTextureType_OPACITY, scene, path, modelDir,
+            dummyAlpha);*/
 
             float opacity = 1.0f;
             mat->Get(AI_MATKEY_OPACITY, opacity);
