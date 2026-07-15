@@ -431,6 +431,21 @@ void Properties::renderProperties(Heiarchy *h)
                                 {
                                     if (h)
                                         h->PushUndoState();
+                                    
+                                    if (arg.isMainCamera && h) {
+                                        for (SceneNode &otherNode : h->nodes) {
+                                            if (&otherNode == &node)
+                                                continue;
+                                            
+                                            otherNode.isMainCamera = false;
+
+                                            for (auto &comp : otherNode.components) {
+                                                if (std::holds_alternative<CameraComponent>(comp.data)) {
+                                                    std::get<CameraComponent>(comp.data).isMainCamera = false;
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
 
                                 if (BeginTable2Col("##t_comp_cam"))

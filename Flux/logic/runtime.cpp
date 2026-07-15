@@ -160,6 +160,7 @@ void Runtime::Start(const std::string &projectName, const std::filesystem::path 
     {
         if (node.type == NodeType::Mesh && node.model)
         {
+            bool actuallyAnchored = !node.hasComponent<PhysicsComponent>() || node.isAnchored;
             JPH::ShapeRefC finalShape;
 
             JPH::Array<JPH::Vec3> joltVerticies;
@@ -172,7 +173,7 @@ void Runtime::Start(const std::string &projectName, const std::filesystem::path 
                 }
             }
 
-            if (!node.isAnchored)
+            if (!actuallyAnchored)
             {
                 JPH::ConvexHullShapeSettings hullSettings(joltVerticies, JPH::cDefaultConvexRadius);
                 JPH::ShapeSettings::ShapeResult hullResult = hullSettings.Create();
@@ -224,8 +225,10 @@ void Runtime::Start(const std::string &projectName, const std::filesystem::path 
                 finalShape = meshResult.Get();
             }
 
-            JPH::EMotionType motionType = node.isAnchored ? JPH::EMotionType::Kinematic : JPH::EMotionType::Dynamic;
-            JPH::ObjectLayer layer = node.isAnchored ? Layers::NON_MOVING : Layers::MOVING;
+            JPH::EMotionType motionType =
+                actuallyAnchored ? (node.isAnchored ? JPH::EMotionType::Kinematic : JPH::EMotionType::Static)
+                                 : JPH::EMotionType::Dynamic;
+            JPH::ObjectLayer layer = actuallyAnchored ? Layers::NON_MOVING : Layers::MOVING;
 
             auto rot = glm::radians(node.rotation);
             JPH::Quat joltRotation = JPH::Quat::sEulerAngles(JPH::Vec3(rot.x, rot.y, rot.z));
@@ -285,7 +288,8 @@ void Runtime::Update()
 
     for (auto &node : m_gameNodes)
     {
-        if (node.type == NodeType::Mesh && node.isAnchored && !node.physicsBodyID.IsInvalid())
+        bool actuallyAnchored = !node.hasComponent<PhysicsComponent>() || node.isAnchored;
+        if (node.type == NodeType::Mesh && actuallyAnchored && !node.physicsBodyID.IsInvalid())
         {
             JPH::Vec3 joltPos(node.position.x, node.position.y, node.position.z);
             auto rot = glm::radians(node.rotation);

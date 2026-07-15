@@ -353,7 +353,12 @@ void Viewport::RenderViewport(Heiarchy &heiarchy)
 
     if (showGrid)
         renderer->DrawGrid(view, proj, camera->Position);
-    
+
+    glManager->Unbind();
+
+    ImGui::Image(reinterpret_cast<void *>(static_cast<intptr_t>(glManager->GetTexture())), sz, ImVec2(0, 1),
+                 ImVec2(1, 0));
+
     ImGui::PushClipRect(imagePos, ImVec2(imagePos.x + sz.x, imagePos.y + sz.y), true);
 
     for (SceneNode &node : heiarchy.nodes)
@@ -376,11 +381,6 @@ void Viewport::RenderViewport(Heiarchy &heiarchy)
     }
 
     ImGui::PopClipRect();
-
-    glManager->Unbind();
-
-    ImGui::Image(reinterpret_cast<void *>(static_cast<intptr_t>(glManager->GetTexture())), sz, ImVec2(0, 1),
-                 ImVec2(1, 0));
 
     ImVec2 mousePos = io.MousePos;
     ImVec2 mouseInCanvas(mousePos.x - imagePos.x, mousePos.y - imagePos.y);
