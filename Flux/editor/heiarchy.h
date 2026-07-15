@@ -56,13 +56,14 @@ class Heiarchy
     void BuildVisualOrder(int parentIndex, std::vector<int> &order) const;
     std::vector<int> DuplicateNodeRecursive(int originalIndex, int newParentIndex);
 
+    std::shared_ptr<Model> GetOrLoadModel(const std::string &path);
+
   private:
     int renamingIndex = -1;
     char renameBuffer[128] = {};
     char searchBuffer[128] = {};
 
     std::unordered_map<std::string, std::shared_ptr<Model>> modelRegistry;
-    std::shared_ptr<Model> GetOrLoadModel(const std::string &path);
 
     void DrawNode(int index);
     void FixIndicesAfterRemoval(int removedIndex);

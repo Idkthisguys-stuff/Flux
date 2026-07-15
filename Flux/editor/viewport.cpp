@@ -139,7 +139,7 @@ void Viewport::DrawLightGizmos(Heiarchy &heiarchy, glm::mat4 view, glm::mat4 pro
             continue;
         if (node.isLightingNode)
             continue;
-        if (node.textureID == 0 && node.type == NodeType::Camera)
+        if (node.textureID == 0 && node.hasComponent<CameraComponent>())
         {
             std::string iconPath = PathHelper::GetAssetPath("assets/icons/camera.png");
             node.textureID = TextureLoader::Load(iconPath);
@@ -274,15 +274,25 @@ void Viewport::RenderViewport(Heiarchy &heiarchy)
     glm::mat4 view = camera->GetViewMatrix();
     glm::mat4 proj = glm::perspective(glm::radians(70.0f), aspect, 0.1f, 2000.f);
 
+    for (auto &node : heiarchy.nodes) {
+        if (node.hasComponent<CameraComponent>() && !node.isMainCamera) {
+            view = camera->GetViewMatrix();    
+        }
+    }
+    
     glm::vec3 sunDir = glm::vec3(0.f, -1.f, 0.f);
     float timeOfDay = 14.f;
     bool hasLightingNode = false;
     SceneNode *ln = heiarchy.GetLightingNode();
+    float nightT = 0.0f;
+
+    glm::vec3 moonDir = glm::vec3(0.f, 1.f, 0.f);
     if (ln)
     {
+        moonDir = -ln->light.direction;
+
         const float kDawn = 6.0f, kDusk = 18.0f, kBlend = 1.0f;
         float tod = ln->light.timeOfDay;
-        float nightT = 0.0f;
         if (tod >= kDusk + kBlend || tod <= kDawn - kBlend)
         {
             nightT = 1.0f;
@@ -300,13 +310,15 @@ void Viewport::RenderViewport(Heiarchy &heiarchy)
             nightT = 0.0f;
         }
 
-        glm::vec3 moonDir = -ln->light.direction;
+
         sunDir = ln->light.direction;
         timeOfDay = ln->light.timeOfDay;
         hasLightingNode = true;
     }
 
-    renderer->DrawDepthPass(heiarchy.nodes, sunDir);
+    glm::vec3 shadowDir = (nightT >= 0.5f) ? moonDir : sunDir;
+    
+    renderer->DrawDepthPass(heiarchy.nodes, shadowDir, camera->Position);
 
     glManager->Resize((int)sz.x, (int)sz.y);
     glManager->Bind();
@@ -318,10 +330,15 @@ void Viewport::RenderViewport(Heiarchy &heiarchy)
 
     for (auto &node : heiarchy.nodes)
     {
-        if (!node.model)
+        if (!node.hasComponent<MeshComponent>()) {
             continue;
-        if (node.type == NodeType::Camera)
-            continue;
+        }
+
+        // No mode? No model -> CUBE
+        if (!node.model) {
+            node.model = heiarchy.GetOrLoadModel(PathHelper::GetAssetPath("assets/models/cube.obj"));
+        }
+
         renderer->DrawScene(*node.model, node.textureID, node.GetWorldTransform(heiarchy.nodes), view, proj,
                             camera->Position, heiarchy.nodes, 1.0f, node.roughness, node.metallic, timeOfDay,
                             node.baseColor, node.textureScale, node.pixelated);
@@ -332,36 +349,23 @@ void Viewport::RenderViewport(Heiarchy &heiarchy)
         renderer->DrawScene(*ghostModel, 0, gt, view, proj, camera->Position, heiarchy.nodes, 0.45f);
     }
 
+    ImVec2 imagePos = ImGui::GetCursorScreenPos();
+
     if (showGrid)
         renderer->DrawGrid(view, proj, camera->Position);
 
-    for (auto &node : heiarchy.nodes)
-    {
-        if (node.type != NodeType::Camera)
-            continue;
-
-        if (node.textureID == 0)
-        {
-            std::string p = PathHelper::GetAssetPath("assets/icons/camera.png");
-            if (std::filesystem::exists(p))
-                node.textureID = TextureLoader::Load(p);
-        }
-
-        if (node.textureID != 0)
-            renderer->DrawBillboard(node.textureID, node.position, 0.5f, view, proj);
-    }
-
     glManager->Unbind();
-
-    ImVec2 imagePos = ImGui::GetCursorScreenPos();
 
     ImGui::Image(reinterpret_cast<void *>(static_cast<intptr_t>(glManager->GetTexture())), sz, ImVec2(0, 1),
                  ImVec2(1, 0));
 
-    for (auto &node : heiarchy.nodes)
+    ImGui::PushClipRect(imagePos, ImVec2(imagePos.x + sz.x, imagePos.y + sz.y), true);
+
+    for (SceneNode &node : heiarchy.nodes)
     {
-        if (node.type != NodeType::Camera)
+        if (!node.hasComponent<CameraComponent>()) {
             continue;
+        }
 
         if (node.textureID == 0)
         {
@@ -370,15 +374,13 @@ void Viewport::RenderViewport(Heiarchy &heiarchy)
                 node.textureID = TextureLoader::Load(p);
         }
 
-        if (node.type == NodeType::Camera)
-        {
-
-            int nodeIdx = &node - &heiarchy.nodes[0];
-            bool selected = heiarchy.isSelected(nodeIdx);
-            ImU32 col = selected ? IM_COL32(255, 230, 0, 255) : IM_COL32(0, 210, 255, 200);
-            CameraGizmoRenderer::Draw(node.GetWorldTransform(heiarchy.nodes), view, proj, imagePos, sz, node.fov, col);
-        }
+        int nodeIdx = &node - &heiarchy.nodes[0];
+        bool selected = heiarchy.isSelected(nodeIdx);
+        ImU32 col = selected ? IM_COL32(255, 230, 0, 255) : IM_COL32(0, 210, 255, 200);
+        CameraGizmoRenderer::Draw(node.GetWorldTransform(heiarchy.nodes), view, proj, imagePos, sz, node.fov, col);
     }
+
+    ImGui::PopClipRect();
 
     ImVec2 mousePos = io.MousePos;
     ImVec2 mouseInCanvas(mousePos.x - imagePos.x, mousePos.y - imagePos.y);
@@ -426,6 +428,8 @@ void Viewport::RenderViewport(Heiarchy &heiarchy)
                         n.model = ghostModel;
                         n.name = heiarchy.GetUniqueName(std::filesystem::path(path).stem().string());
                         n.position = ghostPos;
+                        n.isAnchored = true;
+                        n.components.push_back({"Meshed Renderer", MeshComponent{"", 0.7f, 0.0f}});
                         heiarchy.nodes.push_back(n);
                         heiarchy.selectedIndices.clear();
                         heiarchy.selectedIndices.push_back((int)heiarchy.nodes.size() - 1);

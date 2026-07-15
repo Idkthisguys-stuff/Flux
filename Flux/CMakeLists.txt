@@ -60,6 +60,7 @@ add_executable(Flux
         core/Memory/allocators/poolAllocator.h
         core/Memory/allocators/stackAllocator.h
         core/Memory/MemoryManager.h
+        logic/data/components.h
 )
 
 get_filename_component(PROJECT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/.." ABSOLUTE)
@@ -266,3 +267,20 @@ if (NOT WIN32)
 
     include(CPack)
 endif ()
+
+install(TARGETS Flux DESTINATION bin)
+install(DIRECTORY "${PROJECT_ROOT}/assets/" DESTINATION bin/assets)
+install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/shaders/" DESTINATION bin/shaders)
+install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/templates/" DESTINATION bin/templates)
+
+if (WIN32)
+    set(VCPKG_CONFIG_SUBDIR "")
+    if (CMAKE_BUILD_TYPE STREQUAL "Debug" OR CMAKE_CFG_INTDIR STREQUAL "Debug")
+        set(VCPKG_CONFIG_SUBDIR "debug/")
+    endif()
+
+    install(DIRECTORY "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/${VCPKG_CONFIG_SUBDIR}bin/"
+            DESTINATION bin
+            FILES_MATCHING PATTERN "*.dll"
+    )
+endif()

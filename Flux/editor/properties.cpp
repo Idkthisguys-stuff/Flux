@@ -4,15 +4,12 @@
 #include "output.h"
 #include "render/3D/OpenGL/Model.h"
 #include <algorithm>
-#include <cstring>
 #include <filesystem>
-
-#define GLM_ENABLE_EXPERIMENTAL
-#include <glm/gtc/quaternion.hpp>
-#include <glm/gtx/quaternion.hpp>
+#include <variant>
 
 namespace Flux
 {
+
 static bool BeginTable2Col(const char *id = "##t")
 {
     if (ImGui::BeginTable(id, 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_NoSavedSettings))
@@ -376,280 +373,179 @@ void Properties::renderProperties(Heiarchy *h)
                 }
             }
 
-            if (node.type == NodeType::Camera)
-            {
-                ImGui::Separator();
-                ImGui::Text("Camera Settings");
-                ImGui::Spacing();
+            int compIndex = 0;
+            int componentToRemove = -1;
 
-                if (ImGui::Checkbox("Main Camera", &node.isMainCamera))
+            bool canRemove = true;
+
+            for (auto &comp : node.components)
+            {
+                ImGui::PushID(compIndex);
+                bool isHeaderOpen = ImGui::CollapsingHeader(comp.name.c_str(), ImGuiTreeNodeFlags_DefaultOpen |
+                                                                                   ImGuiTreeNodeFlags_AllowOverlap);
+
+                ImGui::SameLine(ImGui::GetWindowWidth() - 32.f);
+                if (ImGui::Button("...##options", ImVec2(22.f, 18.f)))
                 {
-                    h->PushUndoState();
-                    if (node.isMainCamera)
+                    ImGui::OpenPopup("ComponentContextMenu");
+                }
+
+                if (ImGui::BeginPopup("ComponentContextMenu"))
+                {
+                    if (ImGui::MenuItem("Reset Component values"))
                     {
-                        for (auto &otherNode : h->nodes)
-                        {
-                            if (&otherNode != &node)
-                                otherNode.isMainCamera = false;
-                        }
+                        // Reset here
                     }
+                    if (ImGui::MenuItem("Remove Component", nullptr, false, canRemove))
+                    {
+                        componentToRemove = compIndex;
+                        if (h)
+                            h->PushUndoState();
+                    }
+                    ImGui::EndPopup();
                 }
 
-                if (BeginTable2Col("##t_FOV"))
+                if (isHeaderOpen)
                 {
-                    SliderRow("FOV", node.fov, 10.0f, 170.0f, "%.1f°", h);
-                    ImGui::EndTable();
-                }
-            }
+                    ImGui::Spacing();
 
-            if (node.type == NodeType::Mesh)
-            {
-                ImGui::Separator();
-                ImGui::Text("Surface");
-                ImGui::Spacing();
 
-                if (ImGui::CollapsingHeader("Material Stack", ImGuiTreeNodeFlags_DefaultOpen))
-                {
-                    if (node.model)
-                        ImGui::TextDisabled("  %s", node.model->path.c_str());
-                    ImGui::Separator();
+                    if (node.hasComponent<CameraComponent>() && comp.name == "Camera Settings") {
+                        canRemove = true;
+                    } else if (node.type == NodeType::Mesh && comp.name == "Mesh Renderer") {
+                        canRemove = true;
+                    }
 
-                    auto DrawTexSlot = [&](const char *label, unsigned int &texID, const char *slotID,
-                                           std::string *pathOut, bool isAlbedo) {
-                        const float THUMB_H = 48.f;
-                        const float BTN_W = 24.f;
-                        const float thumbW = ImGui::GetContentRegionAvail().x - BTN_W - 8.f;
+                    if (!canRemove) {
+                        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "WARNING: Essential Component!");
+                        canRemove = true;
+                    }
 
-                        ImGui::PushID(slotID);
-                        ImGui::TextUnformatted(label);
+                    std::visit(
+                        [&](auto &&arg) {
+                            using T = std::decay_t<decltype(arg)>;
 
-                        ImVec2 zonePos = ImGui::GetCursorScreenPos();
-                        ImVec2 zoneMax = {zonePos.x + thumbW, zonePos.y + THUMB_H};
-
-                        if (texID != 0)
-                        {
-
-                            ImGui::Image(reinterpret_cast<void *>(static_cast<intptr_t>(texID)),
-                                         ImVec2(thumbW, THUMB_H), ImVec2(0, 1), ImVec2(1, 0));
-                        }
-                        else
-                        {
-
-                            auto *dl = ImGui::GetWindowDrawList();
-                            dl->AddRectFilled(zonePos, zoneMax, IM_COL32(32, 32, 32, 220), 4.f);
-                            dl->AddRect(zonePos, zoneMax, IM_COL32(85, 85, 85, 200), 4.f, 0, 1.f);
-                            float ty = zonePos.y + THUMB_H * 0.5f - ImGui::GetTextLineHeight() * 0.5f;
-                            dl->AddText(ImVec2(zonePos.x + 8.f, ty), IM_COL32(110, 110, 110, 255), "drop texture here");
-                            ImGui::Dummy(ImVec2(thumbW, THUMB_H));
-                        }
-
-                        ImGui::SetCursorScreenPos(zonePos);
-                        ImGui::InvisibleButton("##hit", ImVec2(thumbW, THUMB_H));
-
-                        if (ImGui::BeginDragDropTarget())
-                        {
-                            if (const ImGuiPayload *p = ImGui::AcceptDragDropPayload("EXPLORER_FILE"))
+                            if constexpr (std::is_same_v<T, CameraComponent>)
                             {
-                                std::string dropped(static_cast<const char *>(p->Data));
-                                std::string ext = std::filesystem::path(dropped).extension().string();
-                                std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-                                if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".bmp" || ext == ".tga")
+                                if (ImGui::Checkbox("Viewing Camera", &arg.isMainCamera))
                                 {
                                     if (h)
                                         h->PushUndoState();
-                                    texID = TextureLoader::Load(dropped);
-                                    if (pathOut)
-                                        *pathOut = dropped;
-                                    if (isAlbedo)
-                                    {
-                                        node.texturePath = dropped;
-                                        node.textureID = texID;
-                                        if (node.model)
-                                            node.model->SetTexture(texID);
+                                    
+                                    if (arg.isMainCamera && h) {
+                                        for (SceneNode &otherNode : h->nodes) {
+                                            if (&otherNode == &node)
+                                                continue;
+                                            
+                                            otherNode.isMainCamera = false;
+
+                                            for (auto &comp : otherNode.components) {
+                                                if (std::holds_alternative<CameraComponent>(comp.data)) {
+                                                    std::get<CameraComponent>(comp.data).isMainCamera = false;
+                                                }
+                                            }
+                                        }
                                     }
                                 }
-                            }
-                            ImGui::EndDragDropTarget();
-                        }
 
-                        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem))
-                            ImGui::GetWindowDrawList()->AddRect(zonePos, zoneMax, IM_COL32(80, 160, 255, 230), 4.f, 0,
-                                                                2.f);
-
-                        ImGui::SameLine();
-                        ImGui::SetCursorScreenPos({zoneMax.x + 4.f, zonePos.y + THUMB_H * 0.5f - 9.f});
-                        if (texID != 0)
-                        {
-                            if (ImGui::Button("X", ImVec2(BTN_W, 18.f)))
-                            {
-                                if (h)
-                                    h->PushUndoState();
-                                texID = 0;
-                                if (pathOut)
-                                    pathOut->clear();
-                                if (isAlbedo)
+                                if (BeginTable2Col("##t_comp_cam"))
                                 {
-                                    node.texturePath = "";
-                                    node.textureID = 0;
-                                    if (node.model)
-                                        node.model->SetTexture(0);
+                                    SliderRow("FOV", arg.fov, 10.0f, 170.0f, "&.1f deg", h);
+                                    ImGui::EndTable();
                                 }
+
+                                node.fov = arg.fov;
+                                node.isMainCamera = arg.isMainCamera;
                             }
-                        }
+                            else if constexpr (std::is_same_v<T, MeshComponent>)
+                            {
+                                if (BeginTable2Col("##t_comp_mesh"))
+                                {
+                                    SliderRow("Roughness", arg.roughness, 0.0f, 1.0f, "%.2f", h);
+                                    SliderRow("Metallic", arg.metallic, 0.0f, 1.0f, "%.2f", h);
 
-                        if (pathOut && !pathOut->empty())
-                            ImGui::TextDisabled("  %s", std::filesystem::path(*pathOut).filename().string().c_str());
-                        ImGui::Spacing();
-                        ImGui::PopID();
-                    };
+                                    ImGui::EndTable();
+                                }
 
-                    if (node.model && !node.model->meshes.empty())
-                    {
-                        auto &mat = node.model->meshes[0].material;
+                                node.roughness = arg.roughness;
+                                node.metallic = arg.metallic;
+                            }
+                            else if constexpr (std::is_same_v<T, PhysicsComponent>)
+                            {
+                                if (BeginTable2Col("##t_comp_phys"))
+                                {
+                                    DragVec3Row("Velocity", arg.velocity, 0.1f, h);
 
-                        DrawTexSlot("Albedo Map", mat.albedoMap, "slot_albedo", &mat.albedoPath, true);
-                        DrawTexSlot("Normal Map", mat.normalMap, "slot_normal", &mat.normalPath, false);
-                        DrawTexSlot("Metallic Map", mat.metallicMap, "slot_metallic", &mat.metallicPath, false);
-                        DrawTexSlot("Roughness Map", mat.roughnessMap, "slot_roughness", &mat.roughnessPath, false);
-                        DrawTexSlot("AO Map", mat.aoMap, "slot_ao", &mat.aoPath, false);
+                                    ImGui::TableNextRow();
+                                    ImGui::TableSetColumnIndex(0);
+                                    ImGui::AlignTextToFramePadding();
+                                    ImGui::TextUnformatted("Anchored");
 
-                        ImGui::Separator();
-                        ImGui::Spacing();
+                                    ImGui::TableSetColumnIndex(1);
+                                    if (ImGui::Checkbox("##anch", &arg.isAnchored))
+                                    {
+                                        if (h)
+                                            h->PushUndoState();
+                                    }
 
-                        if (BeginTable2Col("##mat_scalars"))
-                        {
-                            ImGui::TableNextRow();
-                            ImGui::TableSetColumnIndex(0);
-                            ImGui::AlignTextToFramePadding();
-                            ImGui::TextUnformatted("Base Color");
-                            ImGui::TableSetColumnIndex(1);
-                            ImGui::SetNextItemWidth(-1);
-                            if (ImGui::ColorEdit3("##basecolor", &mat.baseColor[0]))
-                                node.model->meshes[0].matColor = mat.baseColor;
+                                    ImGui::EndTable();
+                                }
 
-                            SliderRow("Metallic", mat.metallic, 0.f, 1.f, "%.2f", h);
-                            SliderRow("Roughness", mat.roughness, 0.f, 1.f, "%.2f", h);
-
-                            node.metallic = mat.metallic;
-                            node.roughness = mat.roughness;
-
-                            ImGui::EndTable();
-                        }
-                    }
-                    else
-                    {
-                        ImGui::TextDisabled("No model loaded.");
-                    }
-                }
-
-                ImGui::Separator();
-                ImGui::Text("Physics");
-                ImGui::Spacing();
-
-                if (BeginTable2Col("##t_physics"))
-                {
-
-                    DragVec3Row("Velocity", node.velocity, 0.1f, h);
-
-                    ImGui::TableNextRow();
-                    ImGui::TableSetColumnIndex(0);
-                    ImGui::AlignTextToFramePadding();
-                    ImGui::TextUnformatted("Anchored");
-
-                    ImGui::TableSetColumnIndex(1);
-                    if (ImGui::Checkbox("###anchored", &node.isAnchored))
-                    {
-                        h->PushUndoState();
-                    }
-
-                    ImGui::EndTable();
-                }
-                ImGui::Separator();
-                ImGui::Text("Material");
-                ImGui::Spacing();
-                if (BeginTable2Col("##t_material"))
-                {
-                    SliderRow("Roughness", node.roughness, 0.0f, 1.0f, "%.2f", h);
-                    SliderRow("Metallic", node.metallic, 0.0f, 1.0f, "%.2f", h);
-                    ImGui::EndTable();
-                }
-                if (!node.texturePath.empty())
-                {
-                    ImGui::Separator();
-                    ImGui::Text("Texture Settings");
+                                node.velocity = arg.velocity;
+                                node.isAnchored = arg.isAnchored;
+                            }
+                        },
+                        comp.data);
                     ImGui::Spacing();
-                    if (BeginTable2Col("##t_texstretch"))
-                    {
-                        ImGui::TableNextRow();
-                        ImGui::TableSetColumnIndex(0);
-                        ImGui::AlignTextToFramePadding();
-                        ImGui::TextUnformatted("Tiling U/V");
-                        ImGui::TableSetColumnIndex(1);
-                        ImGui::SetNextItemWidth(-1);
-                        if (ImGui::DragFloat2("##ts", glm::value_ptr(node.textureScale), 0.01f, 0.01f, 100.0f, "%.2f"))
-                        {
-                        }
-                        if (ImGui::IsItemDeactivatedAfterEdit() && h)
-                            h->PushUndoState();
-
-                        ImGui::TableNextRow();
-                        ImGui::TableSetColumnIndex(0);
-                        ImGui::AlignTextToFramePadding();
-                        ImGui::TextUnformatted("Pixelated");
-                        ImGui::TableSetColumnIndex(1);
-                        if (ImGui::Checkbox("##pixelated", &node.pixelated))
-                        {
-                            if (h)
-                                h->PushUndoState();
-                        }
-                        ImGui::EndTable();
-                    }
                 }
+
+                ImGui::PopID();
+                compIndex++;
             }
-            else
+
+            if (componentToRemove != -1)
             {
-                ImGui::Separator();
-                const char *lbl = node.type == NodeType::DirectionalLight ? "Directional Light"
-                                  : node.type == NodeType::PointLight     ? "Point Light"
-                                  : node.type == NodeType::SpotLight      ? "Spot Light"
-                                                                          : "Surface Light";
-                ImGui::Text("%s", lbl);
-                ImGui::Spacing();
+                node.components.erase(node.components.begin() + componentToRemove);
+            }
 
-                BeginTable2Col("##t_texture");
-                ColorRow("Color", node.light.color, h);
-                FloatRow("Intensity", node.light.intensity, 0.01f, 0.f, 100.f, "%.3f", 0, h);
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing();
 
-                if (node.type == NodeType::DirectionalLight)
-                {
-                    if (DragVec3Row("Direction", node.light.direction, 0.01f, h))
-                    {
-                        node.light.direction = glm::normalize(node.light.direction);
-                        node.rotation = DirToEuler(node.light.direction);
-                    }
-                }
-                if (node.type == NodeType::PointLight)
-                    FloatRow("Range", node.light.range, 0.1f, 0.f, 1000.f, "%.3f", 0, h);
+            float contentWidth = ImGui::GetContentRegionAvail().x;
+            ImGui::SetCursorPosX((contentWidth - 160.0f) * 0.5f);
 
-                if (node.type == NodeType::SpotLight)
+            if (ImGui::Button("Add Component", ImVec2(160.f, 26.f)))
+            {
+                ImGui::OpenPopup("AddComponentMenuPopup");
+            }
+
+            if (ImGui::BeginPopup("AddComponentMenuPopup"))
+            {
+                auto hasComponent = [&](const std::string &name) {
+                    return std::any_of(node.components.begin(), node.components.end(),
+                                       [&](const auto &c) { return c.name == name; });
+                };
+
+                if (ImGui::MenuItem("Camera"))
                 {
-                    if (DragVec3Row("Direction", node.light.direction, 0.01f, h))
-                    {
-                        node.light.direction = glm::normalize(node.light.direction);
-                        glm::vec3 e = DirToEuler(node.light.direction);
-                        node.rotation.x = e.x;
-                        node.rotation.y = e.y;
-                    }
-                    FloatRow("Range", node.light.range, 0.1f, 0.f, 1000.f, "%.3f", 0, h);
-                    FloatRow("Inner Cutoff", node.light.innerCutoff, 0.1f, 0.f, 90.f, "%.3f", 0, h);
-                    FloatRow("Outer Cutoff", node.light.outerCutoff, 0.1f, 0.f, 90.f, "%.3f", 0, h);
+                    if (h)
+                        h->PushUndoState();
+                    node.components.push_back({"Camera Settings", CameraComponent{70.0f, false}});
                 }
-                if (node.type == NodeType::SurfaceLight)
+                if (ImGui::MenuItem("Mesh Renderer"))
                 {
-                    FloatRow("Area Width", node.light.areaWidth, 0.01f, 0.f, 100.f, "%.3f", 0, h);
-                    FloatRow("Area Height", node.light.areaHeight, 0.01f, 0.f, 100.f, "%.3f", 0, h);
+                    if (h)
+                        h->PushUndoState();
+                    node.components.push_back({"Mesh Renderer", MeshComponent{"", 0.7f, 0.0f}});
                 }
-                ImGui::EndTable();
+                if (ImGui::MenuItem("Rigidbody"))
+                {
+                    if (h)
+                        h->PushUndoState();
+                    node.components.push_back({"Rigidbody", PhysicsComponent{glm::vec3(0.f), false}});
+                }
+                ImGui::EndPopup();
             }
         }
         DrawProfileAndStats(h);

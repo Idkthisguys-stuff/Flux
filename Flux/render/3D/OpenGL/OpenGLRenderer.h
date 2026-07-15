@@ -60,6 +60,7 @@ namespace Flux {
         int          shadowResolution = 4096;
         bool         shadowReady      = false;
         glm::mat4    lightSpaceMatrix = glm::mat4(1.f);
+        float        shadowTexelSize  = 0.f; // world units per shadow map texel
 
         void InitBillboard();
     };
