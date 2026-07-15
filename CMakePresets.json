@@ -1,4 +1,4 @@
-﻿{
+{
     "version": 3,
     "configurePresets": [
       {
@@ -8,7 +8,7 @@
         "binaryDir": "${sourceDir}/out/build/${presetName}",
         "installDir": "${sourceDir}/out/install/${presetName}",
         "cacheVariables": {
-          "CMAKE_TOOLCHAIN_FILE": "C:/Users/idkf0/Documents/VCPKG/vcpkg/scripts/buildsystems/vcpkg.cmake"
+          "CMAKE_TOOLCHAIN_FILE": ""
         },
         "condition": {
           "type": "equals",
