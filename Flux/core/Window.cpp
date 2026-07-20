@@ -308,12 +308,6 @@ void Window::update()
         case SDL_EVENT_QUIT:
             m_shouldClose = true;
             break;
-
-        /*case SDL_EVENT_TEXT_INPUT:
-
-            ImGui::GetIO().AddInputCharactersUTF8(event.text.text);
-            break;
-        */
         case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
             if (event.window.windowID == editorWindowID)
             {
@@ -473,7 +467,7 @@ void Window::update()
         ImGui::BeginDisabled(true);
 
     m_viewport.RenderViewport(m_heiarchy);
-    m_properties.renderProperties(&m_heiarchy);
+    m_properties.renderProperties(m_explorer, &m_heiarchy);
     m_heiarchy.renderHeiarchy(m_viewport.activeProjectPath);
 
     if (m_ribbon.editorLocked)

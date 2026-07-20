@@ -217,10 +217,6 @@ void Model::Load()
             }
             myMesh.material.aoMap = LoadMaterialTextures(mat, aiTextureType_AMBIENT, scene, path, modelDir, dummyAlpha,
                                                          myMesh.material.aoPath);
-            /*myMesh.material.dispMap =
-                LoadMaterialTextures(mat, aiTextureType_DISPLACEMENT, scene, path, modelDir, dummyAlpha);
-            myMesh.material.alphaMap = LoadMaterialTextures(mat, aiTextureType_OPACITY, scene, path, modelDir,
-            dummyAlpha);*/
 
             float opacity = 1.0f;
             mat->Get(AI_MATKEY_OPACITY, opacity);

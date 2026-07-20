@@ -1,6 +1,16 @@
 # Flux Contribution
 First, thanks for taking the time to contribute on Flux. It's a big milestone of this project.
 
+> ## Developer Setup & Notes
+>
+> ### 1. IDE Working Directory (Crucial)
+> When running or debugging Flux from your IDE (VS Code / Visual Studio), you **must** set your debugging working directory to the CMake build output directory (e.g., `${workspaceFolder}/out/build/x64-debug/Flux`). If you run it from the root directory, the engine will crash because it cannot locate the copied `assets` or `shaders` folders.
+> 
+> ### 2. Adding New Files
+>  The build system uses a recursive globbing strategy (`file(GLOB_RECURSE)` with `CONFIGURE_DEPENDS`) to automatically find source files. 
+> * **If you add a new `.cpp` or `.h` file**, your IDE might not pick it up instantly. 
+> * Simply open `CMakeLists.txt`, hit **Save**, or trigger a CMake cache reconfigure to force the build system to see your new file.
+
 ## Types of contrbuting
 - [Reporting Bugs](#reporting-bugs)
 - [Optimizing](#optimizing)

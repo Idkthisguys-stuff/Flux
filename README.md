@@ -31,6 +31,7 @@ Flux gonna be cross platform on release (Except for macOS which is still in deve
 | 3. Run `Flux.exe` to start the engine.                  | 3. Double-click to run (or use `./Flux_Engine.AppImage` in terminal).                                                         | 3. Run `sudo dpkg -i FluxEngine-1.0.0.deb`.                         |
 |                                                         | **Note:** If it fails to launch, install `fuse2` or `fuse3` (e.g., `sudo pacman -S fuse2` on Arch).                           | 4. Run `sudo apt install -f` to fix dependencies, then type `Flux`. |
 
+>[!NOTE] You can also run this in zip/.exe file but you to use an external library like Wine
 ## Sneakpeeks
 
 *The first screenshot of the engine showing the 3D grid and viewport.*

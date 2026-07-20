@@ -220,7 +220,33 @@ static void DrawProfileAndStats(Heiarchy *h)
     }
 }
 
-void Properties::renderProperties(Heiarchy *h)
+static void gatherAssetsByExtension(const virtualFile &folder, const std::vector<std::string> &extensions,
+                                    std::vector<std::string> &outPaths)
+{
+    for (const virtualFile &child : folder.children)
+    {
+        if (child.type == Flux::fileType::Folder)
+        {
+            gatherAssetsByExtension(child, extensions, outPaths);
+        }
+        else
+        {
+            std::string ext = child.path.extension().string();
+            std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+
+            for (const std::basic_string<char> &targetExt : extensions)
+            {
+                if (ext == targetExt)
+                {
+                    outPaths.push_back(child.path.string());
+                    break;
+                }
+            }
+        }
+    }
+}
+
+void Properties::renderProperties(Assets &assets, Heiarchy *h)
 {
     ImGui::Begin("Properties");
     if (ImGui::IsWindowHovered())
@@ -409,14 +435,17 @@ void Properties::renderProperties(Heiarchy *h)
                 {
                     ImGui::Spacing();
 
-
-                    if (node.hasComponent<CameraComponent>() && comp.name == "Camera Settings") {
+                    if (node.hasComponent<CameraComponent>() && comp.name == "Camera Settings")
+                    {
                         canRemove = true;
-                    } else if (node.type == NodeType::Mesh && comp.name == "Mesh Renderer") {
+                    }
+                    else if (node.type == NodeType::Mesh && comp.name == "Mesh Renderer")
+                    {
                         canRemove = true;
                     }
 
-                    if (!canRemove) {
+                    if (!canRemove)
+                    {
                         ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "WARNING: Essential Component!");
                         canRemove = true;
                     }
@@ -431,16 +460,20 @@ void Properties::renderProperties(Heiarchy *h)
                                 {
                                     if (h)
                                         h->PushUndoState();
-                                    
-                                    if (arg.isMainCamera && h) {
-                                        for (SceneNode &otherNode : h->nodes) {
+
+                                    if (arg.isMainCamera && h)
+                                    {
+                                        for (SceneNode &otherNode : h->nodes)
+                                        {
                                             if (&otherNode == &node)
                                                 continue;
-                                            
+
                                             otherNode.isMainCamera = false;
 
-                                            for (auto &comp : otherNode.components) {
-                                                if (std::holds_alternative<CameraComponent>(comp.data)) {
+                                            for (auto &comp : otherNode.components)
+                                            {
+                                                if (std::holds_alternative<CameraComponent>(comp.data))
+                                                {
                                                     std::get<CameraComponent>(comp.data).isMainCamera = false;
                                                 }
                                             }
@@ -459,6 +492,167 @@ void Properties::renderProperties(Heiarchy *h)
                             }
                             else if constexpr (std::is_same_v<T, MeshComponent>)
                             {
+                                ImGui::TextUnformatted("Model File");
+
+                                std::string currentModelName =
+                                    arg.modelPath.empty() ? "None (Click to select)"
+                                                          : std::filesystem::path(arg.modelPath).filename().string();
+
+                                float width = ImGui::GetContentRegionAvail().x - 35.0f;
+                                ImGui::SetNextItemWidth(width);
+
+                                if (ImGui::BeginCombo("###ModelDropdown", currentModelName.c_str()))
+                                {
+                                    std::vector<std::string> modelPaths;
+
+                                    gatherAssetsByExtension(assets.projectRoot, {".obj", ".fbx"}, modelPaths);
+
+                                    if (ImGui::Selectable("None", arg.modelPath.empty()))
+                                    {
+                                        if (h)
+                                            h->PushUndoState();
+                                        arg.modelPath = "";
+                                        node.model = nullptr;
+                                    }
+
+                                    for (const std::basic_string<char> &path : modelPaths)
+                                    {
+                                        std::string fileName = std::filesystem::path(path).filename().string();
+                                        bool isSelected = (arg.modelPath == path);
+
+                                        if (ImGui::Selectable(fileName.c_str(), isSelected))
+                                        {
+                                            if (h)
+                                                h->PushUndoState();
+                                            arg.modelPath = path;
+                                            node.model = h->GetOrLoadModel(path);
+                                        }
+                                        if (isSelected)
+                                        {
+                                            ImGui::SetItemDefaultFocus();
+                                        }
+                                    }
+                                    ImGui::EndCombo();
+                                }
+
+                                if (ImGui::BeginDragDropTarget())
+                                {
+                                    if (const ImGuiPayload *payload = ImGui::AcceptDragDropPayload("EXPLORER_FILE"))
+                                    {
+                                        std::string droppedPath(static_cast<const char *>(payload->Data));
+                                        std::string ext = std::filesystem::path(droppedPath).extension().string();
+                                        if (ext == ".obj" || ext == ".fbx")
+                                        {
+                                            if (h)
+                                                h->PushUndoState();
+                                            arg.modelPath = droppedPath;
+                                            node.model = h->GetOrLoadModel(droppedPath);
+                                        }
+                                    }
+
+                                    ImGui::EndDragDropTarget();
+                                }
+                                if (ImGui::IsItemHovered())
+                                    ImGui::SetTooltip("Clear current model");
+
+                                if (!arg.modelPath.empty())
+                                {
+                                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.6f, 0.6f, 1.0f));
+                                    ImGui::TextWrapped("Path: %s", arg.modelPath.c_str());
+                                    ImGui::PopStyleColor();
+                                }
+                                ImGui::Spacing();
+                                ImGui::Separator();
+                                ImGui::Spacing();
+
+                                ImGui::TextUnformatted("Texture File");
+
+                                std::string currentTextureName =
+                                    node.texturePath.empty()
+                                        ? "None (Click to select)"
+                                        : std::filesystem::path(node.texturePath).filename().string();
+                                ImGui::SetNextItemWidth(width);
+
+                                if (ImGui::BeginCombo("##TextureDropdown", currentTextureName.c_str()))
+                                {
+                                    std::vector<std::string> texturePaths;
+                                    gatherAssetsByExtension(assets.projectRoot,
+                                                            {".png", ".jpg", ".jpeg", ".bmp", ".tga"}, texturePaths);
+
+                                    if (ImGui::Selectable("None", node.texturePath.empty()))
+                                    {
+                                        if (h)
+                                            h->PushUndoState();
+                                        node.texturePath = "";
+                                        node.textureID = 0;
+                                        if (node.model)
+                                            node.model->SetTexture(0);
+                                    }
+
+                                    for (const auto &path : texturePaths)
+                                    {
+                                        std::string filename = std::filesystem::path(path).filename().string();
+                                        bool isSelected = (node.texturePath == path);
+                                        if (ImGui::Selectable(filename.c_str(), isSelected))
+                                        {
+                                            if (h)
+                                                h->PushUndoState();
+                                            node.texturePath = path;
+                                            node.textureID = TextureLoader::Load(path);
+                                            if (node.model)
+                                                node.model->SetTexture(node.textureID);
+                                        }
+                                        if (isSelected)
+                                        {
+                                            ImGui::SetItemDefaultFocus();
+                                        }
+                                    }
+                                    ImGui::EndCombo();
+                                }
+
+                                if (ImGui::BeginDragDropTarget())
+                                {
+                                    if (const ImGuiPayload *payload = ImGui::AcceptDragDropPayload("EXPLORER_FILE"))
+                                    {
+                                        std::string droppedPath(static_cast<const char *>(payload->Data));
+                                        std::string ext = std::filesystem::path(droppedPath).extension().string();
+                                        if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".bmp" ||
+                                            ext == ".tga")
+                                        {
+                                            if (h)
+                                                h->PushUndoState();
+                                            node.texturePath = droppedPath;
+                                            node.textureID = TextureLoader::Load(droppedPath);
+                                            if (node.model)
+                                                node.model->SetTexture(node.textureID);
+                                        }
+                                    }
+                                    ImGui::EndDragDropTarget();
+                                }
+
+                                ImGui::SameLine();
+                                if (ImGui::Button("X##ClearTexture", ImVec2(25.f, 0.f)))
+                                {
+                                    if (h)
+                                        h->PushUndoState();
+                                    node.texturePath = "";
+                                    node.textureID = 0;
+                                    if (node.model)
+                                        node.model->SetTexture(0);
+                                }
+                                if (ImGui::IsItemHovered())
+                                    ImGui::SetTooltip("Clear current texture");
+
+                                if (!node.texturePath.empty())
+                                {
+                                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.6f, 0.6f, 1.0f));
+                                    ImGui::TextWrapped("Path: %s", node.texturePath.c_str());
+                                    ImGui::PopStyleColor();
+                                }
+
+                                ImGui::Spacing();
+                                ImGui::Separator();
+
                                 if (BeginTable2Col("##t_comp_mesh"))
                                 {
                                     SliderRow("Roughness", arg.roughness, 0.0f, 1.0f, "%.2f", h);
