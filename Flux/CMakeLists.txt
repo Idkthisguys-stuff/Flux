@@ -61,6 +61,7 @@ add_executable(Flux
         core/Memory/allocators/stackAllocator.h
         core/Memory/MemoryManager.h
         logic/data/components.h
+        render/3D/OpenGL/ShaderLoader.h
 )
 
 get_filename_component(PROJECT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/.." ABSOLUTE)
