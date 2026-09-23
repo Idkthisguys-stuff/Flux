@@ -6,6 +6,7 @@
 #include "imgui_impl_sdl3.h"
 #include "imgui_internal.h"
 #include <SDL3/SDL.h>
+#include <SDL3/SDL_GPU.h>
 
 #include <ShObjIdl.h>
 #include <propkey.h>
@@ -47,36 +48,18 @@ Window::Window(int width, int height, const std::string &title) : m_width(width)
         std::cout << "SUCCESSFULLY STARTED TEXT INPUT" << std::endl;
     }
 
-    m_glContext = SDL_GL_CreateContext(m_window);
-    if (!m_glContext)
-    {
-        std::cerr << "FATAL: SDL_GL_CreateContext failed: " << SDL_GetError() << std::endl;
-        SDL_DestroyWindow(m_window);
+    SDL_GPUShaderFormat formats = SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_DXIL | SDL_GPU_SHADERFORMAT_MSL;
+
+    #ifdef DEBUG_MODE
+        SDL_GPUDevice* m_gpuDevice = SDL_CreateGPUDevice(formats, true, NULL);
+    #else
+        SDL_GPUDevice* m_gpuDevice =SDL_CreateGPUDevice(formats, false, NULL);
+    #endif
+
+    if (!m_gpuDevice) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "GPU DEVICE FAILED TO BE CREATED %s", SDL_GetError());
         SDL_Quit();
-        throw std::runtime_error("SDL_GL_CreateContext failed");
-    }
-
-    SDL_GL_MakeCurrent(m_window, m_glContext);
-    SDL_GL_SetSwapInterval(1);
-
-    if (!gladLoadGLLoader((GLADloadproc)SDL_GL_GetProcAddress))
-    {
-        std::cerr << "ERROR: FAILED TO INITIALIZE GLAD" << std::endl;
-    }
-
-    {
-        int iconW, iconH, iconCh;
-        unsigned char *pixels = stbi_load("assets/icon.png", &iconW, &iconH, &iconCh, 4);
-        if (pixels)
-        {
-            SDL_Surface *icon = SDL_CreateSurfaceFrom(iconW, iconH, SDL_PIXELFORMAT_RGBA32, pixels, iconW * 4);
-            if (icon)
-            {
-                SDL_SetWindowIcon(m_window, icon);
-                SDL_DestroySurface(icon);
-            }
-            stbi_image_free(pixels);
-        }
+        throw std::runtime_error("SDL_CreateGPUDevice failed");
     }
 
 #if defined(_WIN32)

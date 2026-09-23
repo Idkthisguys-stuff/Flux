@@ -27,6 +27,8 @@
 
 #include <dwmapi.h>
 
+#define DEBUG_MODE true // Internal debugger switch (I was just testing preprocessor stuff actually :/)
+
 namespace Flux {
     class Window {
     public:
