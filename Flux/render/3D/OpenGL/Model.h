@@ -2,7 +2,7 @@
 #include <assimp/Importer.hpp>
 #include <assimp/postprocess.h>
 #include <assimp/scene.h>
-#include <glad/glad.h>
+#include <SDL3/SDL_gpu.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -24,21 +24,24 @@ struct Vertex
 
 struct Mesh
 {
-    unsigned int VAO = 0;
-    unsigned int VBO = 0;
-    unsigned int EBO = 0;
-    unsigned int indexCount = 0;
-    unsigned int textureID = 0;
-    glm::vec3 matColor = glm::vec3(0.8f, 0.4f, 0.1f);
-    bool hasMtlColor = false;
+    SDL_GPUBuffer* vertexBuffer = nullptr;
+    SDL_GPUBuffer* indexBuffer = nullptr;
 
+    SDL_GPUTexture* texture = nullptr;
+    SDL_GPUSampler* sampler = nullptr;
+
+    uint32_t vertexCount = 0;
+    uint32_t indexCount = 0;
+
+    glm::vec3 matColor = glm::vec3(0.8f, 0.04f, 0.1f);
+    bool hasMtlColor = false;
     bool twoSided = false;
     bool hasAlpha = false;
 
-    Material material;
+    Material mat;
 
-    std::vector<Vertex> verticies;
-    std::vector<unsigned int> indices;
+    std::vector<Vertex> vertecies;
+    std::vector<uint32_t> indices;
 };
 
 class Model
