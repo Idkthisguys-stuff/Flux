@@ -4,8 +4,7 @@
 #define IMGUI_DEFINE_MATH_OPERATORS
 #endif
 
-#include <glad/glad.h>
-#include <SDL3/SDL.h>
+#include <SDL3/SDL.h> // removed glad.h, imgui now renders through SDL_GPU instead of raw GL
 #include <string>
 #include <filesystem>
 #include "editor/viewport.h"
@@ -18,7 +17,7 @@
 #include "scripting/luaEngine.h"
 #include "imgui.h"
 #include "imgui_impl_sdl3.h"
-#include "imgui_impl_opengl3.h"
+#include "imgui_impl_sdlgpu3.h"
 #include "stb_image.h"
 #include "logic/SplashScreen.h"
 #include "logic/runtime.h"
@@ -47,23 +46,24 @@ namespace Flux {
     private:
         std::vector<SceneNode> m_runtimeNodes;
 
-        SDL_Window*   m_window    = nullptr;
-        SDL_GLContext m_glContext = nullptr;
-        bool          m_shouldClose = false;
+        SDL_Window* m_window = nullptr;
+        SDL_GPUDevice* m_gpuDevice = nullptr;
+        bool m_shouldClose = false;
 
-        int         m_width, m_height;
+        SDL_FColor m_clearColor = { 0.0f, 0.0f, 0.0f, 1.0f }; // clear() now just stashes the color for the render pass below
+
+        int m_width, m_height;
         std::string m_title;
 
-        Viewport   m_viewport;
-        Assets     m_explorer;
-        Ribbon     m_ribbon;
-        Output     m_output;
+        Viewport m_viewport;
+        Assets m_explorer;
+        Ribbon m_ribbon;
+        Output m_output;
         Properties m_properties;
-        Heiarchy   m_heiarchy;
+        Heiarchy m_heiarchy;
         TextEditor m_texteditor;
-        LuaEngine  m_luaEngine;
-        Runtime    m_runtime;
-        OpenGLManager glManager;
+        LuaEngine m_luaEngine;
+        Runtime m_runtime;
 
         SceneSerializer m_sceneSerializer;
 

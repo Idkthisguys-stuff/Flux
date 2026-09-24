@@ -2,7 +2,7 @@
 #include <iostream>
 
 #include "imgui.h"
-#include "imgui_impl_opengl3.h"
+#include "imgui_impl_sdlgpu3.h"
 #include "imgui_impl_sdl3.h"
 #include "imgui_internal.h"
 #include <SDL3/SDL.h>
@@ -24,16 +24,9 @@ Window::Window(int width, int height, const std::string &title) : m_width(width)
         return;
     }
 
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
-    SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
-    
-
+    // no more GL attribs / GL context, SDL_GPU claims the window directly below
     m_window = SDL_CreateWindow(m_title.c_str(), m_width, m_height,
-                                SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_MAXIMIZED);
+                                SDL_WINDOW_RESIZABLE | SDL_WINDOW_MAXIMIZED);
 
     if (!m_window)
     {
@@ -50,10 +43,11 @@ Window::Window(int width, int height, const std::string &title) : m_width(width)
 
     SDL_GPUShaderFormat formats = SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_DXIL | SDL_GPU_SHADERFORMAT_MSL;
 
+    // The last argument on SDL_CreateGPUDevice() MUST STAY NULL SO SDL AUTOMATICALLY CHOOSES THE GPU API!!
     #ifdef DEBUG_MODE
-        SDL_GPUDevice* m_gpuDevice = SDL_CreateGPUDevice(formats, true, NULL);
+        m_gpuDevice = SDL_CreateGPUDevice(formats, true, NULL);
     #else
-        SDL_GPUDevice* m_gpuDevice =SDL_CreateGPUDevice(formats, false, NULL);
+        m_gpuDevice =SDL_CreateGPUDevice(formats, false, NULL);
     #endif
 
     if (!m_gpuDevice) {
@@ -61,6 +55,12 @@ Window::Window(int width, int height, const std::string &title) : m_width(width)
         SDL_Quit();
         throw std::runtime_error("SDL_CreateGPUDevice failed");
     }
+
+    if (!SDL_ClaimWindowForGPUDevice(m_gpuDevice, m_window)) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "FAILED TO MAKE WINDOW CLAIM GPU DEVICE, WHY: %s", SDL_GetError());
+        SDL_Quit();
+        throw std::runtime_error("SDL_ClaimWindowForGPUDevice failed!");
+    } // Yes this is prob necessary ¯\_(ツ)_/¯
 
 #if defined(_WIN32)
     {
@@ -125,10 +125,15 @@ Window::Window(int width, int height, const std::string &title) : m_width(width)
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 
-    ImGui_ImplSDL3_InitForOpenGL(m_window, m_glContext);
-    ImGui_ImplOpenGL3_Init("#version 410");
-
     ApplyTheme(m_ribbon.GetTheme());
+
+    // init the SDL3/SDL_GPU imgui backends instead of SDL3/OpenGL3
+    ImGui_ImplSDL3_InitForSDLGPU(m_window);
+    ImGui_ImplSDLGPU3_InitInfo initInfo = {};
+    initInfo.Device = m_gpuDevice;
+    initInfo.ColorTargetFormat = SDL_GetGPUSwapchainTextureFormat(m_gpuDevice, m_window);
+    initInfo.MSAASamples = SDL_GPU_SAMPLECOUNT_1;
+    ImGui_ImplSDLGPU3_Init(&initInfo);
 
     m_viewport.Init();
     m_heiarchy.setup();
@@ -218,12 +223,11 @@ Window::Window(int width, int height, const std::string &title) : m_width(width)
 
 Window::~Window()
 {
-    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplSDLGPU3_Shutdown();
     ImGui_ImplSDL3_Shutdown();
-    ImGui::DestroyContext();
 
-    if (m_glContext)
-        SDL_GL_DestroyContext(m_glContext);
+    if (m_gpuDevice) 
+        SDL_DestroyGPUDevice(m_gpuDevice);
     if (m_window)
         SDL_DestroyWindow(m_window);
     SDL_Quit();
@@ -246,24 +250,15 @@ void Window::update()
     if (m_window == nullptr)
         return;
 
-    SDL_GL_MakeCurrent(m_window, m_glContext);
-
     if (m_pendingStart)
     {
         m_pendingStart = false;
         StartRuntimeEngine();
-
-        if (!SDL_GL_MakeCurrent(m_window, m_glContext))
-        {
-            Output::addLog("RUNTIME ERROR: Main loop context re-binding failed: " + std::string(SDL_GetError()));
-        }
     }
     if (m_pendingStop)
     {
         m_pendingStop = false;
         StopRuntimeEngine();
-
-        SDL_GL_MakeCurrent(m_window, m_glContext);
     }
 
     Uint32 editorWindowID = SDL_GetWindowID(m_window);
@@ -354,10 +349,8 @@ void Window::update()
         lastState = io.WantCaptureKeyboard;
         std::cout << "[TRAP 2] ImGui Keyboard Capture Changed! Focus State: " << lastState << std::endl;
     }
-
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-    ImGui_ImplOpenGL3_NewFrame();
+    
+    ImGui_ImplSDLGPU3_NewFrame();
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
 
@@ -530,24 +523,40 @@ void Window::update()
     }
 
     ImGui::Render();
+    ImDrawData* drawData = ImGui::GetDrawData();
+    bool isMinimized = (drawData->DisplaySize.x <= 0.0f || drawData->DisplaySize.y <= 0.0f);
 
-    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+    // acquire cmdbuf/swapchain and run the imgui render pass instead of ImGui_ImplOpenGL3_RenderDrawData + SDL_GL_SwapWindow
+    SDL_GPUCommandBuffer* cmdbuf = SDL_AcquireGPUCommandBuffer(m_gpuDevice);
 
-    SDL_GL_MakeCurrent(m_window, m_glContext);
-    SDL_GL_SwapWindow(m_window);
+    SDL_GPUTexture* swapchainTexture = nullptr;
+    SDL_WaitAndAcquireGPUSwapchainTexture(cmdbuf, m_window, &swapchainTexture, nullptr, nullptr);
+
+    if (swapchainTexture && !isMinimized)
+    {
+        ImGui_ImplSDLGPU3_PrepareDrawData(drawData, cmdbuf);
+
+        SDL_GPUColorTargetInfo targetInfo = {};
+        targetInfo.texture = swapchainTexture;
+        targetInfo.clear_color = m_clearColor;
+        targetInfo.load_op = SDL_GPU_LOADOP_CLEAR;
+        targetInfo.store_op = SDL_GPU_STOREOP_STORE;
+
+        SDL_GPURenderPass* renderPass = SDL_BeginGPURenderPass(cmdbuf, &targetInfo, 1, nullptr);
+        ImGui_ImplSDLGPU3_RenderDrawData(drawData, cmdbuf, renderPass);
+        SDL_EndGPURenderPass(renderPass);
+    }
+
+    SDL_SubmitGPUCommandBuffer(cmdbuf);
 
     if (m_runtime.isRunning && m_viewport.camera)
         m_runtime.SyncCamera(m_viewport.camera->Position, m_viewport.camera->Position + m_viewport.camera->Front);
     m_runtime.Update();
-
-    if (m_window && m_glContext)
-        SDL_GL_MakeCurrent(m_window, m_glContext);
 }
 
 void Window::clear(float r, float g, float b, float a)
 {
-    glClearColor(r, g, b, a);
-    glClear(GL_COLOR_BUFFER_BIT);
+    m_clearColor = { r, g, b, a }; // stashed and consumed as the render pass load_op clear color instead of an immediate glClear
 }
 
 void Window::StartRuntimeEngine()
@@ -591,16 +600,13 @@ void Window::StopRuntimeEngine()
     m_ribbon.editorLocked = false;
     m_runtimeNodes.clear();
 
-    SDL_GL_MakeCurrent(m_window, m_glContext);
+    // no GL context / glViewport anymore, GPU swapchain size is just whatever SDL_GetWindowSize reports each frame
     std::filesystem::path backupPath = m_explorer.activeFolderPath/ ".flux" / "temp_runtime_backup.fscn";
     if (std::filesystem::exists(backupPath))
     {
         SceneSerializer::Load(m_heiarchy, backupPath, m_explorer.activeFolderPath);
         std::filesystem::remove(backupPath);
     }
-    int w, h;
-    SDL_GetWindowSize(m_window, &w, &h);
-    glViewport(0, 0, w, h);
 
     Output::addLog("Runtime stopped. Editor view restored.");
 }
