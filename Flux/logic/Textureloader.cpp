@@ -7,36 +7,74 @@ namespace Flux
 {
 std::unordered_map<std::string, unsigned int> TextureLoader::cache;
 
-unsigned int Flux::TextureLoader::LoadCubemap(std::vector<std::string> faces)
+SDL_GPUTexture* Flux::TextureLoader::LoadCubemap(SDL_GPUDevice* device, std::vector<std::string> faces)
 {
-    unsigned int textureID;
-    glGenTextures(1, &textureID);
-    glBindTexture(GL_TEXTURE_CUBE_MAP, textureID);
+    if (!device || faces.size() != 6) return nullptr;
 
-    int width, height, nrChannels;
-    for (unsigned int i = 0; i < faces.size(); i++)
-    {
-        unsigned char *data = stbi_load(faces[i].c_str(), &width, &height, &nrChannels, 0);
-        if (data)
-        {
-            glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE,
-                         data);
-            stbi_image_free(data);
-        }
-        else
-        {
-            std::cerr << "Cubemap failed to load at path: " << faces[i] << std::endl;
-            stbi_image_free(data);
-        }
+    int width = 0, height = 0, channels = 0;
+
+    unsigned char* firstFaceData = stbi_load(faces[0].c_str(), &width, &height, &channels, STBI_rgb_alpha);
+    if (!firstFaceData) {
+        std::cerr << "Cubemap face 0 failrd to load at path: " << faces[0] << "\n";
+        return nullptr;
     }
 
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+    uint32_t faceSize = width * height * 4;
 
-    return textureID;
+    SDL_GPUTextureCreateInfo texInfo = {};
+    texInfo.type = SDL_GPU_TEXTURETYPE_CUBE;
+    texInfo.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+    texInfo.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
+    texInfo.width = static_cast<uint32_t>(width);
+    texInfo.height = static_cast<uint32_t>(height);
+    texInfo.layer_count_or_depth = 6;
+    texInfo.num_levels = 1;
+
+    SDL_GPUTexture* cubeTexture = SDL_CreateGPUTexture(device, &texInfo);
+    if (!cubeTexture) {
+        stbi_image_free(firstFaceData);
+        return nullptr;
+    }
+
+    SDL_GPUTransferBufferCreateInfo xferInfo = {};
+    xferInfo.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+    xferInfo.size = faceSize * 6;
+    SDL_GPUTransferBuffer* xferBuffer = SDL_CreateGPUTransferBuffer(device, &xferInfo);
+
+    uint8_t* mapPtr = static_cast<uint8_t*>(SDL_MapGPUTransferBuffer(device, xferBuffer, false));
+
+    memcpy(mapPtr, firstFaceData, faceSize);
+    stbi_image_free(firstFaceData);
+
+    for (uint32_t i = 1; i < 6; i++) {
+        int w = 0, h = 0, c = 0;
+        unsigned char* data = stbi_load(faces[i].c_str(), &w, &h, &c, STBI_rgb_alpha);
+        
+        if (data) {
+            memcpy(mapPtr + (i * faceSize), data, faceSize);
+            stbi_image_free(data);
+        } else {
+            std::cerr << "Cubemap face couldn't be loaded at path: " << faces[i] << "\n";
+        }
+
+        SDL_UnmapGPUTransferBuffer(device, xferBuffer);
+
+        SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(device);
+        SDL_GPUCopyPass* copyPass = SDL_BeginGPUCopyPass(cmd);
+
+        for (uint32_t i = 0; i < 6; i++) {
+            SDL_GPUTextureTransferInfo srcInfo = {};
+            srcInfo.transfer_buffer = xferBuffer;
+            srcInfo.offset = i * faceSize;
+
+            SDL_GPUTextureRegion dstRegion = {};
+            dstRegion.texture = cubeTexture;
+            dstRegion.layer = i; // Target face layer (0 = +X, 1 = -X, 2 = +Y, 3 = -Y, 4 = +Z, 5 = -Z)
+            dstRegion.w = static_cast<uint32_t>(width);
+            dstRegion.h = static_cast<uint32_t>(height);
+            dstRegion.d = 1;
+        }
+    }
 }
 
 unsigned int TextureLoader::Load(const std::string &path)
@@ -157,26 +195,13 @@ unsigned int TextureLoader::LoadFromMemory(const std::string &cacheKey, const un
     return id;
 }
 
-unsigned int TextureLoader::LoadFromMemoryRaw(const std::string &cacheKey, const unsigned char *data, int width,
-                                              int height, GLenum srcFormat)
+SDL_GPUTexture* TextureLoader::LoadFromMemoryRaw(SDL_GPUDevice* device, const std::string& cacheKey, const unsigned char* data, int width, int height, SDL_GPUTextureFormat* format)
 {
-    auto it = cache.find(cacheKey);
-    if (it != cache.end())
-        return it->second;
+    if (!device || !data || width <= 0 || height <= 0) return nullptr;
 
-    unsigned int id;
-    glGenTextures(1, &id);
-    glBindTexture(GL_TEXTURE_2D, id);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, srcFormat, GL_UNSIGNED_BYTE, data);
-    glGenerateMipmap(GL_TEXTURE_2D);
-
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-    cache[cacheKey] = id;
-    return id;
+    if (cache.contains(cacheKey)) {
+        return cache[cacheKey];
+    }
 }
 
 void TextureLoader::Unload(const std::string &path)

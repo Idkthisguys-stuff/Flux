@@ -15,6 +15,7 @@ static bool HasRealAlpha(const unsigned char *data, int w, int h)
     return false;
 }
 
+// LoadMaterialTextures streams the vertex data into an id from the memory
 static unsigned int LoadMaterialTextures(aiMaterial *mat, aiTextureType type, const aiScene *scene,
                                          const std::string &modelPath, const std::filesystem::path &modelDir,
                                          bool &outHasAlpha, std::string &outPath)
@@ -90,23 +91,43 @@ static unsigned int LoadMaterialTextures(aiMaterial *mat, aiTextureType type, co
     }
 }
 
+void freeGPUMemory(SDL_GPUDevice* device, Mesh& mesh) {
+    if (!device) return;
+
+    if (mesh.vertexBuffer) {
+        SDL_ReleaseGPUBuffer(device, mesh.vertexBuffer);
+        mesh.vertexBuffer = nullptr;
+    }
+
+    if (mesh.indexBuffer) {
+        SDL_ReleaseGPUBuffer(device, mesh.indexBuffer);
+        mesh.indexBuffer = nullptr;
+    }
+
+    if (mesh.texture) {
+        SDL_ReleaseGPUTexture(device, mesh.texture);
+        mesh.texture == nullptr;
+    }
+
+    if (mesh.sampler) {
+        SDL_ReleaseGPUSampler(device, mesh.sampler);
+        mesh.sampler = nullptr;
+    }
+}
+
 Model::~Model()
 {
-    for (auto &mesh : meshes)
+    for (Mesh &mesh : meshes)
     {
-        glDeleteVertexArrays(1, &mesh.VAO);
-        glDeleteBuffers(1, &mesh.VBO);
-        glDeleteBuffers(1, &mesh.EBO);
+        freeGPUMemory(nullptr, mesh); // Leave device argument nullptr for now because gpu_device hasn't been passed to Model class yet
     }
 }
 
 void Model::Load()
 {
-    for (auto &mesh : meshes)
+    for (Mesh &mesh : meshes)
     {
-        glDeleteVertexArrays(1, &mesh.VAO);
-        glDeleteBuffers(1, &mesh.VBO);
-        glDeleteBuffers(1, &mesh.EBO);
+        freeGPUMemory(nullptr, mesh); // Device argument is null here too because of the same reason in line 122
     }
     meshes.clear();
 
@@ -114,7 +135,7 @@ void Model::Load()
     void *fileBuffer = SDL_LoadFile(path.c_str(), &fileSize);
     if (!fileBuffer)
     {
-        std::cerr << "Failed to load model file: " << path << " - " << SDL_GetError() << std::endl;
+        std::cerr << "Failed to load model file: " << path << " - " << SDL_GetError() << "\n";
         Output::addLog("MODEL ERROR: Failed to load model file: " + path);
         return;
     }
@@ -181,8 +202,8 @@ void Model::Load()
         if (verts.empty() || indices.empty())
             continue;
 
-        Mesh myMesh;
-        myMesh.indexCount = (unsigned int)indices.size();
+        Mesh mesh;
+        mesh.indexCount = (unsigned int)indices.size();
 
         if (aMesh->mMaterialIndex < scene->mNumMaterials)
         {
@@ -190,65 +211,65 @@ void Model::Load()
 
             int twoSidedVal = 0;
             mat->Get(AI_MATKEY_TWOSIDED, twoSidedVal);
-            myMesh.twoSided = (twoSidedVal != 0);
+            mesh.twoSided = (twoSidedVal != 0);
 
             bool dummyAlpha = false;
 
-            myMesh.material.baseColor = myMesh.matColor;
+            mesh.mat.baseColor = mesh.matColor;
             
-            myMesh.textureID = LoadMaterialTextures(mat, aiTextureType_DIFFUSE, scene, path, modelDir, myMesh.hasAlpha,
-                                                    myMesh.material.albedoPath);
+            mesh.textureID = LoadMaterialTextures(mat, aiTextureType_DIFFUSE, scene, path, modelDir, mesh.hasAlpha,
+                                                    mesh.mat.albedoPath);
 
-            myMesh.material.normalMap = LoadMaterialTextures(mat, aiTextureType_NORMALS, scene, path, modelDir,
-                                                             dummyAlpha, myMesh.material.normalPath);
-            if (myMesh.material.normalMap == 0)
+            mesh.mat.normalMap = LoadMaterialTextures(mat, aiTextureType_NORMALS, scene, path, modelDir,
+                                                             dummyAlpha, mesh.mat.normalPath);
+            if (mesh.mat.normalMap == 0)
             {
-                myMesh.material.normalMap = LoadMaterialTextures(mat, aiTextureType_HEIGHT, scene, path, modelDir,
-                                                                 dummyAlpha, myMesh.material.normalPath);
+                mesh.mat.normalMap = LoadMaterialTextures(mat, aiTextureType_HEIGHT, scene, path, modelDir,
+                                                                 dummyAlpha, mesh.mat.normalPath);
             }
-            myMesh.material.metallicMap = LoadMaterialTextures(mat, aiTextureType_METALNESS, scene, path, modelDir,
-                                                               dummyAlpha, myMesh.material.metallicPath);
-            myMesh.material.roughnessMap = LoadMaterialTextures(mat, aiTextureType_DIFFUSE_ROUGHNESS, scene, path,
-                                                                modelDir, dummyAlpha, myMesh.material.roughnessPath);
-            if (myMesh.material.roughnessMap == 0)
+            mesh.mat.metallicMap = LoadMaterialTextures(mat, aiTextureType_METALNESS, scene, path, modelDir,
+                                                               dummyAlpha, mesh.mat.metallicPath);
+            mesh.mat.roughnessMap = LoadMaterialTextures(mat, aiTextureType_DIFFUSE_ROUGHNESS, scene, path,
+                                                                modelDir, dummyAlpha, mesh.mat.roughnessPath);
+            if (mesh.mat.roughnessMap == 0)
             {
-                myMesh.material.roughnessMap = LoadMaterialTextures(mat, aiTextureType_SHININESS, scene, path, modelDir,
-                                                                    dummyAlpha, myMesh.material.roughnessPath);
+                mesh.mat.roughnessMap = LoadMaterialTextures(mat, aiTextureType_SHININESS, scene, path, modelDir,
+                                                                    dummyAlpha, mesh.mat.roughnessPath);
             }
-            myMesh.material.aoMap = LoadMaterialTextures(mat, aiTextureType_AMBIENT, scene, path, modelDir, dummyAlpha,
-                                                         myMesh.material.aoPath);
-            /*myMesh.material.dispMap =
+            mesh.mat.aoMap = LoadMaterialTextures(mat, aiTextureType_AMBIENT, scene, path, modelDir, dummyAlpha,
+                                                         mesh.mat.aoPath);
+            /*mesh.mat.dispMap =
                 LoadMaterialTextures(mat, aiTextureType_DISPLACEMENT, scene, path, modelDir, dummyAlpha);
-            myMesh.material.alphaMap = LoadMaterialTextures(mat, aiTextureType_OPACITY, scene, path, modelDir,
+            mesh.mat.alphaMap = LoadMaterialTextures(mat, aiTextureType_OPACITY, scene, path, modelDir,
             dummyAlpha);*/
 
             float opacity = 1.0f;
             mat->Get(AI_MATKEY_OPACITY, opacity);
             if (opacity < 0.99f)
-                myMesh.hasAlpha = true;
+                mesh.hasAlpha = true;
 
-            if (myMesh.hasAlpha && myMesh.textureID != 0 && !myMesh.twoSided)
-                myMesh.twoSided = true;
+            if (mesh.hasAlpha && mesh.textureID != 0 && !mesh.twoSided)
+                mesh.twoSided = true;
 
             aiColor3D col(0.8f, 0.4f, 0.1f);
             mat->Get(AI_MATKEY_COLOR_DIFFUSE, col);
-            myMesh.matColor = glm::vec3(col.r, col.g, col.b);
-            myMesh.material.albedoMap = myMesh.textureID;
-            myMesh.hasMtlColor = true;
+            mesh.matColor = glm::vec3(col.r, col.g, col.b);
+            mesh.mat.albedoMap = mesh.textureID;
+            mesh.hasMtlColor = true;
 
-            mat->Get(AI_MATKEY_METALLIC_FACTOR, myMesh.material.metallic);
-            mat->Get(AI_MATKEY_ROUGHNESS_FACTOR, myMesh.material.roughness);
+            mat->Get(AI_MATKEY_METALLIC_FACTOR, mesh.mat.metallic);
+            mat->Get(AI_MATKEY_ROUGHNESS_FACTOR, mesh.mat.roughness);
         }
 
-        glGenVertexArrays(1, &myMesh.VAO);
-        glGenBuffers(1, &myMesh.VBO);
-        glGenBuffers(1, &myMesh.EBO);
-        glBindVertexArray(myMesh.VAO);
+        glGenVertexArrays(1, &mesh.VAO);
+        glGenBuffers(1, &mesh.VBO);
+        glGenBuffers(1, &mesh.EBO);
+        glBindVertexArray(mesh.VAO);
 
-        glBindBuffer(GL_ARRAY_BUFFER, myMesh.VBO);
+        glBindBuffer(GL_ARRAY_BUFFER, mesh.VBO);
         glBufferData(GL_ARRAY_BUFFER, verts.size() * sizeof(Vertex), verts.data(), GL_STATIC_DRAW);
 
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, myMesh.EBO);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mesh.EBO);
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int), indices.data(), GL_STATIC_DRAW);
 
         glEnableVertexAttribArray(0);
@@ -268,10 +289,10 @@ void Model::Load()
 
         glBindVertexArray(0);
 
-        myMesh.verticies = verts;
-        myMesh.indices = indices;
+        mesh.verticies = verts;
+        mesh.indices = indices;
 
-        meshes.push_back(myMesh);
+        meshes.push_back(mesh);
     }
 }
 
@@ -281,31 +302,31 @@ void Model::Draw(float /*alphaOverride*/)
     {
         // Albedo / Diffuse
         glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, mesh.material.albedoMap ? mesh.material.albedoMap : mesh.textureID);
+        glBindTexture(GL_TEXTURE_2D, mesh.mat.albedoMap ? mesh.mat.albedoMap : mesh.textureID);
 
         // Normals
         glActiveTexture(GL_TEXTURE1);
-        glBindTexture(GL_TEXTURE_2D, mesh.material.normalMap);
+        glBindTexture(GL_TEXTURE_2D, mesh.mat.normalMap);
 
         // Metallic
         glActiveTexture(GL_TEXTURE2);
-        glBindTexture(GL_TEXTURE_2D, mesh.material.metallicMap);
+        glBindTexture(GL_TEXTURE_2D, mesh.mat.metallicMap);
 
         // Roughness
         glActiveTexture(GL_TEXTURE3);
-        glBindTexture(GL_TEXTURE_2D, mesh.material.roughnessMap);
+        glBindTexture(GL_TEXTURE_2D, mesh.mat.roughnessMap);
 
         // Ambient Occlusion
         glActiveTexture(GL_TEXTURE4);
-        glBindTexture(GL_TEXTURE_2D, mesh.material.aoMap);
+        glBindTexture(GL_TEXTURE_2D, mesh.mat.aoMap);
 
         /* // Displacement
         glActiveTexture(GL_TEXTURE5);
-        glBindTexture(GL_TEXTURE_2D, mesh.material.dispMap);
+        glBindTexture(GL_TEXTURE_2D, mesh.mat.dispMap);
 
         // Alpha
         glActiveTexture(GL_TEXTURE6);
-        glBindTexture(GL_TEXTURE_2D, mesh.material.alphaMap);*/
+        glBindTexture(GL_TEXTURE_2D, mesh.mat.alphaMap);*/
 
         glBindVertexArray(mesh.VAO);
         glDrawElements(GL_TRIANGLES, mesh.indexCount, GL_UNSIGNED_INT, nullptr);

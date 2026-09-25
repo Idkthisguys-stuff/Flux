@@ -1,5 +1,5 @@
 #pragma once
-#include <glad/glad.h>
+#include <SDL3/SDL_gpu.h>
 #include <string>
 #include <vector>
 #include <unordered_map>
@@ -19,10 +19,10 @@ namespace Flux {
 
         static unsigned int Load(const std::string& path);
         void Unload(const std::string& path);
-        static unsigned int LoadCubemap(std::vector<std::string> faces);
+        SDL_GPUTexture* LoadCubemap(SDL_GPUDevice* device, std::vector<std::string> faces);
         static unsigned int LoadFromMemory(const std::string& cacheKey, const unsigned char* data, size_t size, bool* outHasAlpha = nullptr);
 
-        static unsigned int LoadFromMemoryRaw(const std::string& cacheKey, const unsigned char* data, int width, int height, GLenum srcFormat = GL_BGRA);
+        static unsigned int LoadFromMemoryRaw(SDL_GPUDevice* device, const std::string& cacheKey, const unsigned char* data, int width, int height, SDL_GPUShaderFormat* format);
 
         static std::unordered_map<std::string, unsigned int> cache;
     private:
